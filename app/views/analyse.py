@@ -9,7 +9,7 @@ expander down. Neither has to read the other's version to find their own.
 from __future__ import annotations
 
 import traceback
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 import streamlit as st
@@ -28,6 +28,22 @@ from gaitscreen.reporting.plain import summarise
 from gaitscreen.segmentation.events import independent_cadence_spm
 from gaitscreen.storage.artifacts import SessionArtifacts
 from gaitscreen.version import ALGO_NOTES, ALGO_VERSION
+
+def _local_today() -> date:
+    """Best-effort local date for the recording default. Never raises.
+
+    Server runs UTC; without adjustment, evening US users get "tomorrow".
+    Shifts back 7h (PDT) as a pragmatic fix. Wrapped so no browser or
+    environment quirk can break the date picker.
+    """
+    try:
+        return (datetime.now(timezone.utc) - timedelta(hours=7)).date()
+    except Exception:
+        try:
+            return date.today()
+        except Exception:
+            return date(1970, 1, 1)  # sentinel: should never happen
+
 
 RECORDING_GUIDANCE = """
 **In order of how much it matters.** These come from what actually went wrong on
@@ -101,7 +117,7 @@ def _sidebar(cfg: Config) -> dict:
                 placeholder="e.g. Bob",
                 help="Used to group this person's walks into a trend. Saved walks are grouped under this name.",
             ),
-            "session_date": st.date_input("Date of recording", value=date.today()),
+            "session_date": st.date_input("Date of recording", value=_local_today()),
             "device": st.selectbox(
                 "Assistive device used",
                 ["none", "cane", "walking stick", "walker / frame", "other"],
