@@ -203,9 +203,11 @@ def test_biased_metric_does_not_headline_on_an_absolute_threshold(cfg):
 
     assert "Worth discussing" not in summary.headline
     assert "read high from video" in summary.sub_headline
-    # The card itself still shows the flag.
+    # The card itself renders no verdict: the absolute number is not
+    # meaningful, so even a flag does not earn a chip. The flag still
+    # shapes the headline via the held-back path above.
     card = next(c for c in summary.cards if c.key == "double_support_pct")
-    assert card.status == "attention"
+    assert card.status == "neutral"
 
 
 def test_biased_metric_does_headline_on_a_trend_change(cfg):
@@ -255,7 +257,9 @@ def test_summarises_a_real_pipeline_result(cfg):
     assert summary.measured_cards, "a clean synthetic walk should measure something"
     assert summary.walk_description and "step cycles" in summary.walk_description
     for card in summary.cards:
-        assert card.name and card.what and card.direction
+        assert card.name and card.what
+        if not plain_module.PLAIN[card.key].get("trend_only"):
+            assert card.direction
 
 
 # --------------------------------------------------------------------------

@@ -18,6 +18,7 @@ STATUS_CHIP: dict[str, str] = {
     "watch": ":orange[**● Keep an eye on**]",
     "attention": ":red[**▲ Worth discussing**]",
     "unmeasured": ":grey[**— Not measured**]",
+    "neutral": ":grey[**— Trend only**]",
 }
 
 TONE_RENDERER = {
@@ -84,7 +85,8 @@ def _plain_card(card) -> None:
             st.markdown(f"## {card.value_text}")
             if card.everyday:
                 st.caption(card.everyday)
-            st.caption(f"_{card.direction}_")
+            if card.direction:
+                st.caption(f"_{card.direction}_")
         st.caption(card.what)
         if card.note:
             st.caption(f":orange[⚠ {card.note}]")

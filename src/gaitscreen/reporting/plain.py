@@ -31,13 +31,14 @@ from typing import Literal, Optional
 from ..config import Config
 from ..types import CORE_METRICS, SessionMetrics
 
-Status = Literal["good", "watch", "attention", "unmeasured"]
+Status = Literal["good", "watch", "attention", "unmeasured", "neutral"]
 
 STATUS_LABEL: dict[Status, str] = {
     "good": "Typical",
     "watch": "Keep an eye on",
     "attention": "Worth discussing",
     "unmeasured": "Not measured",
+    "neutral": "Trend only",
 }
 
 #: Ordering, naming and explanation for each metric, aimed at a non-specialist.
@@ -85,6 +86,7 @@ PLAIN: dict[str, dict] = {
         "unit": "% of each step",
         "fmt": "{:.1f}",
         "higher_is_better": False,
+        "trend_only": True,
         "what": "How much of each walking cycle is spent with both feet on the "
                 "ground. People who feel unsteady tend to spend longer on both "
                 "feet, because it is the stable part of the cycle.",
@@ -171,7 +173,7 @@ class MetricCard:
     status: Status
     value_text: str  # formatted value with unit, or ""
     what: str  # what this measures, in plain words
-    direction: str  # "higher is better" / "lower is better"
+    direction: Optional[str]  # "higher is better" / "lower is better"; None when no verdict is rendered
     note: Optional[str] = None  # caveat or plain unmeasured reason
     technical_note: Optional[str] = None  # the full original wording
     everyday: Optional[str] = None  # an everyday-units restatement
@@ -210,7 +212,7 @@ def summarise(result, cfg: Config) -> PlainSummary:
              for key in _metrics_for_view(result)]
 
     n_measured = sum(1 for c in cards if c.measured)
-    headline, sub, tone = _verdict(result, cards, n_measured)
+    headline, sub, tone = _verdict(result, cards, n_measured, statuses)
 
     return PlainSummary(
         headline=headline,
@@ -288,9 +290,12 @@ def _card(key: str, metrics: SessionMetrics, statuses: dict[str, Status],
           cfg: Config) -> MetricCard:
     spec = PLAIN[key]
     value = metrics.value(key)
+    trend_only = spec.get("trend_only", False)
     direction = spec.get("direction_text") or (
         "higher is better" if spec.get("higher_is_better") else "lower is better"
     )
+    if trend_only:
+        direction = None
 
     if value is None:
         technical = metrics.unavailable.get(key)
@@ -306,13 +311,14 @@ def _card(key: str, metrics: SessionMetrics, statuses: dict[str, Status],
     if key == "gait_speed_mps":
         everyday = spec["everyday"].format(kmh=value * 3.6)
 
-    note = _plain_caveat(metrics.low_confidence_metrics.get(key))
+    note = None if trend_only else _plain_caveat(metrics.low_confidence_metrics.get(key))
     bias = spec.get("known_bias")
     if bias:
         note = f"{bias} {note}" if note else bias
 
+    status: Status = "neutral" if trend_only else statuses.get(key, "good")
     return MetricCard(
-        key=key, name=spec["name"], status=statuses.get(key, "good"),
+        key=key, name=spec["name"], status=status,
         value_text=value_text, what=spec["what"], direction=direction,
         note=note, technical_note=metrics.low_confidence_metrics.get(key),
         everyday=everyday,
@@ -356,8 +362,12 @@ def _plain_caveat(technical: Optional[str]) -> Optional[str]:
     return None
 
 
-def _verdict(result, cards: list[MetricCard], n_measured: int) -> tuple[str, str, str]:
+def _verdict(result, cards: list[MetricCard], n_measured: int,
+             statuses: dict[str, Status]) -> tuple[str, str, str]:
     """The single line that leads the results page."""
+    # Verdict logic uses the flag-derived statuses, not the cards' display
+    # statuses: a trend-only metric shows "Trend only" on its card but its
+    # flags must still drive (or be held back from) the headline.
     if n_measured == 0:
         return (
             "This video could not be measured",
@@ -368,9 +378,11 @@ def _verdict(result, cards: list[MetricCard], n_measured: int) -> tuple[str, str
         )
 
     attention = [c for c in cards
-                 if c.status == "attention" and _leads_verdict(c, result)]
+                 if statuses.get(c.key, "good") == "attention"
+                 and _leads_verdict(c, result)]
     watch = [c for c in cards
-             if c.status == "watch" and _leads_verdict(c, result)]
+             if statuses.get(c.key, "good") == "watch"
+             and _leads_verdict(c, result)]
     trend_flags = [f for f in result.flags.flags if f.trigger == "trend"]
 
     caveat = _confidence_caveat(result)
@@ -402,7 +414,7 @@ def _verdict(result, cards: list[MetricCard], n_measured: int) -> tuple[str, str
             "watch",
         )
     held_back = [c for c in cards
-                 if c.status in ("attention", "watch")
+                 if statuses.get(c.key, "good") in ("attention", "watch")
                  and not _leads_verdict(c, result)]
     if held_back:
         names = _join([c.name.lower() for c in held_back])
