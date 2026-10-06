@@ -243,7 +243,8 @@ def _render_overlay(cfg: Config, result, progress) -> dict | None:
 # --------------------------------------------------------------------------
 def _render_result(cfg: Config, result, notes: str) -> None:
     st.divider()
-    summary = summarise(result, cfg)
+    summary = summarise(
+        result, cfg, include_technical=st.session_state.get("show_technical", False))
 
     if _is_coronal(result):
         # Said before the numbers, not after. Someone who filmed from the wrong

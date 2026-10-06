@@ -57,7 +57,10 @@ def test_every_core_metric_has_plain_wording():
     for key, spec in PLAIN.items():
         assert spec["name"] and not spec["name"].endswith("."), key
         assert len(spec["what"]) > 40, key
-        assert spec.get("direction_text") or "higher_is_better" in spec, key
+        # Direction is optional: metrics without an evidence-based direction
+        # (e.g. cadence) render no direction line rather than a made-up one.
+        assert (spec.get("direction_text") or "higher_is_better" in spec
+                or key == "cadence_spm"), key
 
 
 def test_no_metric_name_uses_gait_lab_vocabulary():
@@ -71,10 +74,10 @@ def test_no_metric_name_uses_gait_lab_vocabulary():
         )
 
 
-def test_cadence_states_a_band_not_a_direction():
-    """"Higher is better" would endorse a fast shuffle."""
+def test_cadence_states_no_direction():
+    """No evidence-based direction for cadence; the number stands alone."""
     assert "higher_is_better" not in PLAIN["cadence_spm"]
-    assert "100-120" in PLAIN["cadence_spm"]["direction_text"]
+    assert "direction_text" not in PLAIN["cadence_spm"]
 
 
 # --------------------------------------------------------------------------
@@ -258,7 +261,9 @@ def test_summarises_a_real_pipeline_result(cfg):
     assert summary.walk_description and "step cycles" in summary.walk_description
     for card in summary.cards:
         assert card.name and card.what
-        if not plain_module.PLAIN[card.key].get("trend_only"):
+        spec = plain_module.PLAIN[card.key]
+        if not spec.get("trend_only") and (
+                spec.get("direction_text") or "higher_is_better" in spec):
             assert card.direction
 
 

@@ -57,10 +57,10 @@ PLAIN: dict[str, dict] = {
         "name": "Steps per minute",
         "unit": "steps/min",
         "fmt": "{:.0f}",
-        # Cadence has a comfortable band rather than a good direction. Saying
-        # "higher is better" would endorse a fast shuffle, which is the opposite
-        # of what it usually indicates.
-        "direction_text": "usually 100-120 in comfortable walking",
+        # No direction text: cadence has no evidence-based risk threshold, and
+        # stating the 100-120 comfortable band next to a "Typical" verdict
+        # contradicts it for slow walkers. The number is shown without a
+        # directional judgment.
         "what": "How often they take a step. Taken together with step length, "
                 "this is what makes up walking speed.",
     },
@@ -204,11 +204,11 @@ class PlainSummary:
         return [c for c in self.cards if not c.measured]
 
 
-def summarise(result, cfg: Config) -> PlainSummary:
+def summarise(result, cfg: Config, *, include_technical: bool = False) -> PlainSummary:
     """Build the plain-language view of a completed session."""
     metrics = result.metrics
     statuses = _statuses_from_flags(result)
-    cards = [_card(key, metrics, statuses, cfg)
+    cards = [_card(key, metrics, statuses, cfg, include_technical)
              for key in _metrics_for_view(result)]
 
     n_measured = sum(1 for c in cards if c.measured)
@@ -287,13 +287,16 @@ def _leads_verdict(card: MetricCard, result) -> bool:
 
 
 def _card(key: str, metrics: SessionMetrics, statuses: dict[str, Status],
-          cfg: Config) -> MetricCard:
+          cfg: Config, include_technical: bool = False) -> MetricCard:
     spec = PLAIN[key]
     value = metrics.value(key)
     trend_only = spec.get("trend_only", False)
-    direction = spec.get("direction_text") or (
-        "higher is better" if spec.get("higher_is_better") else "lower is better"
-    )
+    if "direction_text" in spec:
+        direction = spec["direction_text"]
+    elif "higher_is_better" in spec:
+        direction = "higher is better" if spec["higher_is_better"] else "lower is better"
+    else:
+        direction = None
     if trend_only:
         direction = None
 
@@ -311,7 +314,7 @@ def _card(key: str, metrics: SessionMetrics, statuses: dict[str, Status],
     if key == "gait_speed_mps":
         everyday = spec["everyday"].format(kmh=value * 3.6)
 
-    note = None if trend_only else _plain_caveat(metrics.low_confidence_metrics.get(key))
+    note = None if trend_only else _plain_caveat(metrics.low_confidence_metrics.get(key), include_technical)
     bias = spec.get("known_bias")
     if bias:
         note = f"{bias} {note}" if note else bias
@@ -335,8 +338,13 @@ def _plain_unmeasured(technical: Optional[str]) -> str:
     return "This could not be worked out from this video."
 
 
-def _plain_caveat(technical: Optional[str]) -> Optional[str]:
-    """Shorten the low-confidence caveats to a single readable sentence."""
+def _plain_caveat(technical: Optional[str], include_technical: bool = False) -> Optional[str]:
+    """Shorten the low-confidence caveats to a single readable sentence.
+
+    Pipeline-internals caveats (step-detection disagreement, leg separation)
+    are only included when include_technical is True; they are not actionable
+    for a non-specialist reader.
+    """
     if not technical:
         return None
     lowered = technical.lower()
@@ -350,9 +358,13 @@ def _plain_caveat(technical: Optional[str]) -> Optional[str]:
         return ("Measured from one side, so the far leg is partly hidden. Record "
                 "a pass in each direction for a fairer left/right comparison.")
     if "inconsistent" in lowered or "independent count" in lowered:
+        if not include_technical:
+            return None
         return ("Treat with caution: the step detection did not agree with itself "
                 "on this video.")
     if "not being tracked separately" in lowered:
+        if not include_technical:
+            return None
         return "Treat with caution: the two legs were hard to tell apart here."
     if "single-scalar pixel scale" in lowered:
         return ("Approximate: the distance setup assumes the person stays the same "

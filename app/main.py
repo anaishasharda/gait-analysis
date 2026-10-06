@@ -39,13 +39,41 @@ PAGES = {
 }
 
 
+_THRESHOLD_LABELS = {
+    "gait_speed_mps": "Speed",
+    "stride_time_cv_pct": "Step consistency",
+    "step_length_asymmetry_pct": "Left/right evenness",
+}
+
+
+def _render_thresholds(cfg) -> None:
+    """Show the active flag thresholds. Illustrative only, not clinical."""
+    for key, label in _THRESHOLD_LABELS.items():
+        thresh = cfg.get(f"flagging.absolute.{key}", {})
+        parts = []
+        for name, val in thresh.items():
+            direction = ">" if "above" in name else "<"
+            level = "high" if "high_risk" in name else "moderate"
+            parts.append(f"{direction}{val} {level}")
+        if parts:
+            st.sidebar.caption(f"{label}: {', '.join(parts)}")
+
+
 def main() -> None:
     cfg = get_config()
 
     st.sidebar.title("🚶 Gait screening")
-    st.sidebar.caption(f"pilot build · algorithm {ALGO_VERSION}")
     choice = st.sidebar.radio("Page", list(PAGES), label_visibility="collapsed")
     st.sidebar.divider()
+    show_technical = st.sidebar.checkbox(
+        "Technical details",
+        value=st.session_state.get("show_technical", False),
+        help="Show pipeline internals: algorithm version, technical caveats, diagnostic detail.",
+    )
+    st.session_state["show_technical"] = show_technical
+    if show_technical:
+        st.sidebar.caption("Flag thresholds (illustrative):")
+        _render_thresholds(cfg)
 
     PAGES[choice](cfg)
 
