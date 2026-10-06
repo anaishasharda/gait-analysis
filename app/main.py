@@ -77,5 +77,11 @@ def main() -> None:
 
     PAGES[choice](cfg)
 
+    st.divider()
+    st.caption(
+        "CadenceCare is a screening and trend-monitoring aid \u2014 not a medical "
+        "device. Analysis uses pose estimation (MediaPipe)."
+    )
+
 
 main()
