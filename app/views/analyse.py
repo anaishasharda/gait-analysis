@@ -76,7 +76,7 @@ def render(cfg: Config) -> None:
         "Upload a side-on (sagittal) walking video", type=VIDEO_TYPES
     )
 
-    with st.expander("Recording guidance — read before your first pilot recording"):
+    with st.expander("Recording guidance — read before your first recording"):
         st.markdown(RECORDING_GUIDANCE)
 
     if uploaded is None:

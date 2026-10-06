@@ -25,7 +25,7 @@ for directory in (PROJECT_ROOT, PROJECT_ROOT / "src"):
     if str(directory) not in sys.path:
         sys.path.insert(0, str(directory))
 
-st.set_page_config(page_title="Gait screening pilot", page_icon="🚶", layout="wide")
+st.set_page_config(page_title="CadenceCare", page_icon="🚶", layout="wide")
 
 from app.shared import get_config  # noqa: E402
 from app.views import analyse, calibration, limitations, trends  # noqa: E402
