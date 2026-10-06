@@ -17,7 +17,7 @@ import streamlit as st
 from app.shared import (PROJECT_ROOT, VIDEO_TYPES, bullet_list, disclaimer,
                         open_repository, render_flags, render_metrics,
                         render_recording_feedback,
-                        render_recording_measurements, save_upload)
+                        render_recording_measurements, safe_user_id, save_upload)
 from app.widgets_plain import (render_annotated_video, render_plain_cards,
                                render_verdict)
 from gaitscreen.config import Config
@@ -85,6 +85,7 @@ def render(cfg: Config) -> None:
 
     if st.button("Analyse", type="primary"):
         _run(cfg, uploaded, settings)
+        st.rerun()
 
     if st.session_state.get("result") is not None:
         _render_result(cfg, st.session_state["result"], settings["notes"])
@@ -117,14 +118,18 @@ def _sidebar(cfg: Config) -> dict:
         person = settings["user_id"].strip()
         if result is None:
             st.caption("Analyse a walk first — then save it here to build this person's trend.")
-        elif not person:
-            st.caption("Enter a person name above to save this walk.")
         elif st.session_state.get("result_saved"):
-            st.caption(f"Saved to {person}'s trend. Open the Trends page to see it in context.")
-        elif st.button(f"Save this walk to {person}'s trend", type="primary"):
-            _save(cfg, result, settings["notes"])
-            st.session_state["result_saved"] = True
-            st.rerun()
+            st.caption(f"Saved to {result.user_id}'s trend. Open the Trends page to see it in context.")
+        else:
+            label = f"Save this walk to {person}'s trend" if person else "Save this walk"
+            if st.button(label, type="primary"):
+                if not person:
+                    st.warning("Enter a person name above first, then click Save again.")
+                else:
+                    result.user_id = safe_user_id(person)
+                    _save(cfg, result, settings["notes"])
+                    st.session_state["result_saved"] = True
+                    st.rerun()
 
         st.subheader("Processing options")
         settings["use_calibration"] = st.checkbox(

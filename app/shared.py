@@ -56,6 +56,11 @@ def open_repository(cfg: Config) -> SessionRepository:
     return SessionRepository(cfg.resolve_path("storage.db_path", PROJECT_ROOT))
 
 
+def safe_user_id(user_id: str) -> str:
+    """Filesystem/DB-safe version of a person name."""
+    return re.sub(r'[\\/:*?"<>|]', "", user_id or "_unassigned").strip() or "_unassigned"
+
+
 def save_upload(uploaded, user_id: str) -> Path:
     """Persist an upload under its original filename.
 
@@ -63,7 +68,7 @@ def save_upload(uploaded, user_id: str) -> Path:
     re-analysing the same video updates that session rather than creating a
     duplicate visit on the same date.
     """
-    safe_id = re.sub(r'[\\/:*?"<>|]', "", user_id or "_unassigned").strip() or "_unassigned"
+    safe_id = safe_user_id(user_id)
     target_dir = UPLOAD_DIR / safe_id
     target_dir.mkdir(parents=True, exist_ok=True)
     path = target_dir / uploaded.name
