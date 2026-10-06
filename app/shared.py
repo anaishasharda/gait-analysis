@@ -1,6 +1,7 @@
 """Paths, resources and widgets shared across the app's views."""
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 from typing import Sequence
@@ -62,7 +63,8 @@ def save_upload(uploaded, user_id: str) -> Path:
     re-analysing the same video updates that session rather than creating a
     duplicate visit on the same date.
     """
-    target_dir = UPLOAD_DIR / (user_id or "_unassigned")
+    safe_id = re.sub(r'[\\/:*?"<>|]', "", user_id or "_unassigned").strip() or "_unassigned"
+    target_dir = UPLOAD_DIR / safe_id
     target_dir.mkdir(parents=True, exist_ok=True)
     path = target_dir / uploaded.name
     path.write_bytes(uploaded.getbuffer())

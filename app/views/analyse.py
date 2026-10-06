@@ -71,7 +71,7 @@ def render(cfg: Config) -> None:
     st.header("Analyse a walk")
     disclaimer()
 
-    settings = _sidebar()
+    settings = _sidebar(cfg)
     uploaded = st.file_uploader(
         "Upload a side-on (sagittal) walking video", type=VIDEO_TYPES
     )
@@ -90,13 +90,15 @@ def render(cfg: Config) -> None:
         _render_result(cfg, st.session_state["result"], settings["notes"])
 
 
-def _sidebar() -> dict:
+def _sidebar(cfg: Config) -> dict:
     with st.sidebar:
         st.subheader("Session details")
         settings = {
             "user_id": st.text_input(
-                "Person ID", value="pilot01",
-                help="Used to group sessions into a trend.",
+                "Person name",
+                value="",
+                placeholder="e.g. Bob",
+                help="Used to group this person's walks into a trend. Saved walks are grouped under this name.",
             ),
             "session_date": st.date_input("Date of recording", value=date.today()),
             "device": st.selectbox(
@@ -109,6 +111,20 @@ def _sidebar() -> dict:
             ),
             "notes": st.text_area("Notes (optional)", height=70),
         }
+
+        st.subheader("Trend history")
+        result = st.session_state.get("result")
+        person = settings["user_id"].strip()
+        if result is None:
+            st.caption("Analyse a walk first — then save it here to build this person's trend.")
+        elif not person:
+            st.caption("Enter a person name above to save this walk.")
+        elif st.session_state.get("result_saved"):
+            st.caption(f"Saved to {person}'s trend. Open the Trends page to see it in context.")
+        elif st.button(f"Save this walk to {person}'s trend", type="primary"):
+            _save(cfg, result, settings["notes"])
+            st.session_state["result_saved"] = True
+            st.rerun()
 
         st.subheader("Processing options")
         settings["use_calibration"] = st.checkbox(
@@ -174,6 +190,7 @@ def _run(cfg: Config, uploaded, settings: dict) -> None:
             check_camera_motion=settings["camera_check"],
         )
         st.session_state["result"] = result
+        st.session_state["result_saved"] = False
         st.session_state["overlay"] = (
             _render_overlay(cfg, result, progress) if settings["make_video"] else None
         )
@@ -250,10 +267,6 @@ def _render_result(cfg: Config, result, notes: str) -> None:
     render_recording_feedback(result.diagnostics, expanded=False)
 
     _render_technical(cfg, result)
-
-    st.divider()
-    if st.button("Save this session to the trend history", type="primary"):
-        _save(cfg, result, notes)
 
 
 def _is_coronal(result) -> bool:

@@ -21,7 +21,7 @@ def render(cfg: Config) -> None:
         "scale-free and works without it."
     )
 
-    user_id = st.text_input("Person ID", value="pilot01")
+    user_id = st.text_input("Person name", value="", placeholder="e.g. Bob")
     method = st.radio(
         "Method",
         ["Known walk distance (easiest)", "Two marked points (more precise)"],
