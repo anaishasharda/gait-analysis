@@ -73,7 +73,7 @@ def render(cfg: Config) -> None:
 
     settings = _sidebar(cfg)
     uploaded = st.file_uploader(
-        "Upload a side-on (sagittal) walking video", type=VIDEO_TYPES
+        "Upload a side-on video (person walking across the frame)", type=VIDEO_TYPES
     )
 
     with st.expander("Recording guidance — read before your first recording"):
