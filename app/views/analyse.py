@@ -53,18 +53,18 @@ real pilot recordings, not from theory.
    common reason a session cannot be measured. There is a hard trade-off: framed
    well, a person filling half the frame covers most of it in two or three
    strides, so a single walk-past yields two to five strides where ten are
-   needed for a variability figure. You cannot fix this by zooming out — that
+   needed for a variability figure. You cannot fix this by zooming out. That
    just makes the subject too small. Walk them up and back, two or three times,
    in the same clip.
 2. **Fill at least half the frame height with the person.** Foot position can
    only be located to within a pixel or two, so how big they are in frame sets
    the precision of everything. Head to floor, with a little room to spare.
 3. **Legs and ankles visible.** Loose or flowing trousers hide the knee and
-   ankle, and the tracker then *infers* where they are rather than seeing them —
+   ankle, and the tracker then *infers* where they are rather than seeing them.
    producing confident, wrong numbers. Fitted trousers, leggings, shorts, or
    loose trousers rolled up.
 4. **Fixed camera, square to the walking path.** On a tripod or propped against
-   something solid — never handheld, and never following the person. Stand level
+   something solid. Never handheld, and never following the person. Stand level
    with the middle of the path so they cross the frame sideways rather than
    moving towards or away from you.
 5. **Whole walk inside the frame.** Start recording once the person is already
@@ -76,7 +76,7 @@ real pilot recordings, not from theory.
 7. **Only the walker in shot.** Bystanders in the background can make the
    tracker jump to a different person mid-recording.
 8. **Record assistive-device use in the sidebar.** Pose estimation cannot see a
-   cane — it detects bodies, not objects.
+   cane. It detects bodies, not objects.
 
 After analysing, the **How to improve the recording** section tells you which of
 these applied to your clip and what to change.
@@ -88,19 +88,81 @@ def render(cfg: Config) -> None:
     disclaimer()
 
     settings = _sidebar(cfg)
-    uploaded = st.file_uploader(
-        "Upload a side-on video (person walking across the frame)", type=VIDEO_TYPES
-    )
 
-    with st.expander("Recording guidance — read before your first recording"):
+    # Lock the uploader during analysis: uploading mid-run orphans the
+    # progress bar. User waits for completion, then uploads.
+    locked = (st.session_state.get("analysing", False)
+          or st.session_state.get("analysis_phase") in (2, 3))
+    uploaded = st.file_uploader(
+        "Upload a side-on video (person walking across the frame)", type=VIDEO_TYPES,
+        disabled=locked,
+    )
+    if locked:
+        st.caption("Upload is disabled during analysis and will be re-enabled when it finishes.")
+
+    # If the uploaded file differs from the one that was analyzed, the
+    # displayed results are stale. Clear them immediately.
+    # Key = name + size (file_id is not reliable across uploads).
+    def _file_key(f):
+        return f"{f.name}_{f.size}" if f is not None else None
+
+    uploaded_key = _file_key(uploaded)
+    analyzed_key = st.session_state.get("_analyzed_file_key")
+    if uploaded_key is not None and st.session_state.get("result") is not None:
+        if analyzed_key is not None and uploaded_key != analyzed_key:
+            st.session_state["result"] = None
+            st.session_state["overlay"] = None
+
+    with st.expander("Recording guidance: read before your first recording"):
         st.markdown(RECORDING_GUIDANCE)
+
+    # Phase 2: render cleared UI (no stale results), then trigger phase 3.
+    if st.session_state.get("analysis_phase") == 2:
+        st.session_state["analysis_phase"] = 3
+        st.empty()
+        st.info("Starting analysis…")
+        # Brief pause so the frontend renders the cleared state before
+        # Phase 3 blocks for 4 minutes. Without this, the two reruns batch
+        # and the old results stay visible (greyed out).
+        import time
+        time.sleep(2)
+        st.rerun()
+        return
+
+    # Phase 3: start the blocking analysis. Frontend already shows cleared UI.
+    if st.session_state.get("analysis_phase") == 3:
+        st.session_state["analysis_phase"] = None
+        if uploaded is not None:
+            _run(cfg, uploaded, settings)
+        st.rerun()
+        return
+
+    if st.session_state.get("analysing", False):
+        pct = st.session_state.get("progress_pct", 0.0)
+        txt = st.session_state.get("progress_text", "Processing…")
+        st.progress(pct, text=txt)
+        st.caption("Analysis in progress. Results will appear here when done.")
+        return
+
+    existing = st.session_state.get("result")
+    if existing is not None and uploaded is None:
+        _render_result(cfg, existing, settings["notes"])
+        if st.button("Analyse a new video", type="secondary"):
+            st.session_state["result"] = None
+            st.session_state["overlay"] = None
+            st.rerun()
+        return
 
     if uploaded is None:
         st.info("Upload a video to begin.")
         return
 
     if st.button("Analyse", type="primary"):
-        _run(cfg, uploaded, settings)
+        # Clear old results immediately so the pane doesn't show stale metrics
+        # while the new analysis runs.
+        st.session_state["result"] = None
+        st.session_state["overlay"] = None
+        st.session_state["analysis_phase"] = 2
         st.rerun()
 
     if st.session_state.get("result") is not None:
@@ -122,7 +184,7 @@ def _sidebar(cfg: Config) -> dict:
                 "Assistive device used",
                 ["none", "cane", "walking stick", "walker / frame", "other"],
                 help=(
-                    "Pose estimation cannot see a cane — it detects bodies, not "
+                    "Pose estimation cannot see a cane. It detects bodies, not "
                     "objects. This entry is the authoritative record."
                 ),
             ),
@@ -133,7 +195,7 @@ def _sidebar(cfg: Config) -> dict:
         result = st.session_state.get("result")
         person = settings["user_id"].strip()
         if result is None:
-            st.caption("Analyse a walk first — then save it here to build this person's trend.")
+            st.caption("Analyse a walk first, then save it here to build this person's trend.")
         elif st.session_state.get("result_saved"):
             st.caption(f"Saved to {result.user_id}'s trend. Open the Trends page to see it in context.")
         else:
@@ -175,6 +237,18 @@ def _sidebar(cfg: Config) -> dict:
 
 
 def _run(cfg: Config, uploaded, settings: dict) -> None:
+    st.session_state["analysing"] = True
+    st.session_state["progress_pct"] = 0.0
+    st.session_state["progress_text"] = "Starting…"
+    try:
+        _run_inner(cfg, uploaded, settings)
+    finally:
+        st.session_state["analysing"] = False
+        st.session_state.pop("progress_pct", None)
+        st.session_state.pop("progress_text", None)
+
+
+def _run_inner(cfg: Config, uploaded, settings: dict) -> None:
     path = save_upload(uploaded, settings["user_id"])
     session_date = settings["session_date"].isoformat()
     progress = st.progress(0.0, text="Tracking the person in the video…")
@@ -194,10 +268,11 @@ def _run(cfg: Config, uploaded, settings: dict) -> None:
         estimated_frames = max(1, int(getattr(uploaded, "size", 0) / 20000))
 
         def on_frame(index: int) -> None:
-            progress.progress(
-                min(0.9, index / estimated_frames),
-                text=f"Tracking the person in the video… frame {index}",
-            )
+            pct = min(0.9, index / estimated_frames)
+            txt = f"Tracking the person in the video… frame {index}"
+            st.session_state["progress_pct"] = pct
+            st.session_state["progress_text"] = txt
+            progress.progress(pct, text=txt)
 
         result = analyse_video(
             path, cfg,
@@ -212,6 +287,8 @@ def _run(cfg: Config, uploaded, settings: dict) -> None:
         )
         st.session_state["result"] = result
         st.session_state["result_saved"] = False
+        # Remember which file was analyzed, so a new upload clears stale results.
+        st.session_state["_analyzed_file_key"] = f"{uploaded.name}_{uploaded.size}"
         st.session_state["overlay"] = (
             _render_overlay(cfg, result, progress) if settings["make_video"] else None
         )
@@ -233,7 +310,20 @@ def _render_overlay(cfg: Config, result, progress) -> dict | None:
     The video is a presentation aid; the measurements are the product. A missing
     encoder should cost the viewer the replay, not the session.
     """
+    # Update session_state so a rerun during overlay shows current progress,
+    # not the stale "frame 775" from the tracking phase.
+    st.session_state["progress_pct"] = 0.92
+    st.session_state["progress_text"] = "Drawing the tracking onto the video…"
     progress.progress(0.92, text="Drawing the tracking onto the video…")
+
+    n_frames = result.extraction.series.n_frames
+    def on_overlay_frame(decoded: int) -> None:
+        pct = 0.92 + 0.08 * min(1.0, decoded / max(1, n_frames))
+        txt = f"Drawing the tracking onto the video… frame {decoded}/{n_frames}"
+        st.session_state["progress_pct"] = pct
+        st.session_state["progress_text"] = txt
+        progress.progress(pct, text=txt)
+
     artifacts = SessionArtifacts(
         cfg.resolve_path("storage.artifacts_root", PROJECT_ROOT),
         result.user_id, result.session_id,
@@ -243,6 +333,7 @@ def _render_overlay(cfg: Config, result, progress) -> dict | None:
         overlay = render_overlay_video(
             result.extraction, result.analysis, artifacts.overlay_path, cfg,
             max_width=int(cfg["reporting.overlay.max_width"]),
+            progress=on_overlay_frame,
         )
         return {
             "path": str(overlay.path),
@@ -300,7 +391,7 @@ def _render_technical(cfg: Config, result) -> None:
     """Everything a clinician or tester needs, kept out of the plain view."""
     analysis = result.analysis
 
-    with st.expander("Technical detail — exact measures, event plots, diagnostics"):
+    with st.expander("Technical detail: exact measures, event plots, diagnostics"):
         st.markdown("**Clinical flags**")
         st.caption(
             "The same findings as above, in the wording and thresholds the "
@@ -430,7 +521,7 @@ def _render_diagnostics(cfg: Config, result) -> None:
             hide_index=True, width="stretch",
         )
 
-    st.caption(f"Algorithm version {ALGO_VERSION} — {ALGO_NOTES}")
+    st.caption(f"Algorithm version {ALGO_VERSION}: {ALGO_NOTES}")
 
 
 def _save(cfg: Config, result, notes: str) -> None:

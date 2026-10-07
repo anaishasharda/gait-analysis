@@ -81,7 +81,7 @@ def save_upload(uploaded, user_id: str) -> Path:
 # --------------------------------------------------------------------------
 def disclaimer() -> None:
     st.caption(
-        "Screening and trend-monitoring tool — **not a diagnostic instrument**. "
+        "Screening and trend-monitoring tool (**not a diagnostic instrument**). "
         "It is built to flag *changes* in one person's walking over time. "
         "All clinical thresholds are illustrative and must be reviewed against "
         "current geriatric literature before real use."
@@ -168,7 +168,7 @@ def render_recording_feedback(report, *, expanded: bool = True) -> None:
 
     headline = report.headline
     lead = (
-        f"**Most important fix — {headline.title.lower()}.** {headline.fix}"
+        f"**Most important fix: {headline.title.lower()}.** {headline.fix}"
         if headline else ""
     )
     body = lead + NL + NL + f'*Found: {summary}.*'

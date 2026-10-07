@@ -89,7 +89,7 @@ def _render_summary(repository, user_id: str) -> None:
     columns[2].metric(
         "Date range",
         f"{summary['date_range'][0]} → {summary['date_range'][1]}"
-        if summary["date_range"] else "—",
+        if summary["date_range"] else "-",
     )
     columns[3].metric("Algorithm versions", len(summary["algo_versions"]))
 

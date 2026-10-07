@@ -17,8 +17,8 @@ STATUS_CHIP: dict[str, str] = {
     "good": ":green[**✓ Typical**]",
     "watch": ":orange[**● Keep an eye on**]",
     "attention": ":red[**▲ Worth discussing**]",
-    "unmeasured": ":grey[**— Not measured**]",
-    "neutral": ":grey[**— Trend only**]",
+    "unmeasured": ":grey[**Not measured**]",
+    "neutral": ":grey[**Trend only**]",
 }
 
 TONE_RENDERER = {
@@ -32,7 +32,7 @@ VIDEO_CAPTION = (
     "The skeleton is what the tool actually tracked, and the circles mark the "
     "moments it decided each foot landed and lifted. If the skeleton follows the "
     "joints and the red circles appear as the heel touches down, the "
-    "measurements rest on solid ground. If they do not, they do not — and this "
+    "measurements rest on solid ground. If they do not, they do not, and this "
     "is the quickest way to tell."
 )
 
@@ -73,7 +73,7 @@ def render_plain_cards(summary) -> None:
             "of anything about the person's walking."
         )
         for card in unmeasured:
-            st.markdown(f"**{card.name}** — {card.note}")
+            st.markdown(f"**{card.name}**: {card.note}")
             st.caption(card.what)
 
 

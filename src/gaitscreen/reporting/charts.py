@@ -72,7 +72,7 @@ def event_overlay_figure(series, analysis, *, max_seconds: float = 12.0):
 
     axes_list[-1].set_xlabel("time (s)")
     axes_list[0].set_title(
-        "Detected gait events — heel strikes should land on peaks, toe-offs in "
+        "Detected gait events: heel strikes should land on peaks, toe-offs in "
         "troughs; shaded bands are strides (grey = excluded)",
         fontsize=10, loc="left",
     )

@@ -66,7 +66,33 @@ html, body, [class*="css"] { font-family: 'Inter', -apple-system, sans-serif; }
     z-index: 999;
     text-align: center;
 }
-.main .block-container { padding-bottom: 60px; }
+.main .block-container,
+[data-testid="stMainBlockContainer"],
+section[data-testid="stMain"] > div {
+    padding-top: 2rem !important;
+    padding-bottom: 60px !important;
+}
+[data-testid="stSidebar"] .block-container,
+[data-testid="stSidebarUserContent"],
+[data-testid="stSidebar"] > div {
+    padding-top: 1.5rem !important;
+}
+/* Hide the Streamlit header bar (60px white space at top) */
+header[data-testid="stHeader"],
+.stAppHeader {
+    display: none !important;
+}
+/* Sidebar top spacing - aggressive multi-selector */
+section[data-testid="stSidebar"],
+[data-testid="stSidebar"],
+.st-emotion-cache-10p9htt {
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+}
+section[data-testid="stSidebar"] > div,
+[data-testid="stSidebar"] > div {
+    padding-top: 0.5rem !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -109,13 +135,21 @@ def main() -> None:
     cfg = get_config()
 
     st.sidebar.title("🚶 Gait screening")
-    choice = st.sidebar.radio("Page", list(PAGES), label_visibility="collapsed")
+    locked = (st.session_state.get("analysing", False)
+          or st.session_state.get("analysis_phase") in (2, 3))
+    choice = st.sidebar.radio(
+        "Page", list(PAGES), label_visibility="collapsed",
+        disabled=locked,
+    )
     st.sidebar.divider()
     show_technical = st.sidebar.checkbox(
         "Technical details",
         value=st.session_state.get("show_technical", False),
         help="Show pipeline internals: algorithm version, technical caveats, diagnostic detail.",
+        disabled=locked,
     )
+    if locked:
+        st.sidebar.caption("Sidebar is disabled during analysis and will be re-enabled when it finishes.")
     st.session_state["show_technical"] = show_technical
     if show_technical:
         st.sidebar.caption("Flag thresholds (illustrative):")

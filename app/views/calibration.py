@@ -17,7 +17,7 @@ def render(cfg: Config) -> None:
     st.header("Calibration")
     st.caption(
         "Only needed for **gait speed in metres per second**. Every other metric "
-        "— variability, cadence, asymmetry, double support, trunk lean — is "
+        "(variability, cadence, asymmetry, double support, trunk lean) is "
         "scale-free and works without it."
     )
 
@@ -88,7 +88,7 @@ def _from_walk(cfg: Config, user_id: str, path: Path) -> None:
 def _from_points(cfg: Config, user_id: str, path: Path) -> None:
     st.markdown(
         "Mark two points a known distance apart. Place them **along the walking "
-        "path**, not across it, and as far apart as possible — a short reference "
+        "path**, not across it, and as far apart as possible. A short reference "
         "turns a small marking error into a large scale error."
     )
 
@@ -97,11 +97,11 @@ def _from_points(cfg: Config, user_id: str, path: Path) -> None:
 
     left, right = st.columns(2)
     with left:
-        x0 = st.slider("Point 1 — x", 0, width - 1, int(width * 0.15))
-        y0 = st.slider("Point 1 — y", 0, height - 1, int(height * 0.85))
+        x0 = st.slider("Point 1: x", 0, width - 1, int(width * 0.15))
+        y0 = st.slider("Point 1: y", 0, height - 1, int(height * 0.85))
     with right:
-        x1 = st.slider("Point 2 — x", 0, width - 1, int(width * 0.85))
-        y1 = st.slider("Point 2 — y", 0, height - 1, int(height * 0.85))
+        x1 = st.slider("Point 2: x", 0, width - 1, int(width * 0.85))
+        y1 = st.slider("Point 2: y", 0, height - 1, int(height * 0.85))
 
     st.image(_annotate(frame, (x0, y0), (x1, y1)),
              caption="Reference points", width="stretch")
