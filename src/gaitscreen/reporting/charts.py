@@ -153,6 +153,8 @@ def trend_figure(
 ):
     """One metric over time, with flagged sessions and the personal baseline."""
     figure, axes = plt.subplots(figsize=(9, 2.8), constrained_layout=True)
+    # Extra left margin so y-axis labels (e.g. "Step-length asymmetry (%)") don't truncate
+    figure.subplots_adjust(left=0.14)
     frame = history.dropna(subset=[metric]).sort_values("session_date")
 
     if frame.empty:
@@ -169,27 +171,45 @@ def trend_figure(
                          baseline_centre + baseline_spread,
                          color="#666666", alpha=0.10, lw=0)
 
-    axes.plot(frame["session_date"], frame[metric], "-", color="#3182bd", lw=1.3,
+    # Use integer x-positions so same-day sessions don't overlap.
+    # Tick labels show the dates.
+    x_pos = list(range(len(frame)))
+    axes.plot(x_pos, frame[metric].values, "-", color="#00695C", lw=1.3,
               zorder=2)
 
     confident = frame[frame.get(low_confidence_column, 0) == 0]
     provisional = frame[frame.get(low_confidence_column, 0) == 1]
-    axes.scatter(confident["session_date"], confident[metric], s=42,
-                 color="#3182bd", zorder=3, label="session")
+    conf_idx = [i for i, (_, r) in enumerate(frame.iterrows())
+                if r.get(low_confidence_column, 0) == 0]
+    prov_idx = [i for i, (_, r) in enumerate(frame.iterrows())
+                if r.get(low_confidence_column, 0) == 1]
+    axes.scatter(conf_idx, confident[metric].values, s=42,
+                 color="#00695C", zorder=3)
     if not provisional.empty:
-        axes.scatter(provisional["session_date"], provisional[metric], s=42,
-                     facecolors="none", edgecolors="#3182bd", linewidths=1.4,
+        axes.scatter(prov_idx, provisional[metric].values, s=42,
+                     facecolors="none", edgecolors="#00695C", linewidths=1.4,
                      zorder=3, label="low confidence")
 
     if flagged_dates is not None and len(flagged_dates):
-        flagged = frame[frame["session_date"].isin(list(flagged_dates))]
-        if not flagged.empty:
-            axes.scatter(flagged["session_date"], flagged[metric], s=150,
+        flagged_mask = frame["session_date"].isin(list(flagged_dates))
+        flagged_idx = [i for i, m in enumerate(flagged_mask) if m]
+        if flagged_idx:
+            axes.scatter(flagged_idx,
+                         frame.loc[flagged_mask, metric].values, s=150,
                          marker="o", facecolors="none", edgecolors="#d7301f",
                          linewidths=2.0, zorder=4, label="flagged")
 
+    # Date labels on x-axis
+    date_labels = [d.strftime("%m-%d") if hasattr(d, "strftime") else str(d)
+                   for d in frame["session_date"]]
+    axes.set_xticks(x_pos)
+    axes.set_xticklabels(date_labels, rotation=30, ha="right", fontsize=8)
+
     axes.set_ylabel(label, fontsize=9)
-    axes.legend(loc="best", fontsize=8, framealpha=0.9)
-    figure.autofmt_xdate(rotation=30)
+    # Only show legend if there's something needing explanation
+    # (baseline, low-confidence, or flagged). The teal dots are self-evident.
+    handles, labels = axes.get_legend_handles_labels()
+    if handles:
+        axes.legend(loc="best", fontsize=8, framealpha=0.9)
     _style(axes)
     return figure

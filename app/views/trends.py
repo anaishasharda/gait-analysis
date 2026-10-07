@@ -22,13 +22,38 @@ def render(cfg: Config) -> None:
             st.info("No sessions saved yet. Analyse a walk and save it first.")
             return
 
-        user_id = st.selectbox("Person", users)
+        # Narrow dropdown: limit width based on content, not full page
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            user_id = st.selectbox("Person", users)
         history = repository.sessions_for_user(user_id)
         if history.empty:
             st.info(f"No saved sessions for {user_id}.")
             return
 
+        # Summary line: N sessions from X to Y. Last session on Z.
+        n = len(history)
+        dates = history["session_date"].sort_values()
+        first = dates.iloc[0].date()
+        last = dates.iloc[-1].date()
+        st.caption(f"{n} session{'s' if n != 1 else ''} from {first} to {last}. Last session on {last}.")
+
         _render_summary(repository, user_id)
+
+        # Last-N sessions selector: only show if more than 1 session
+        # (slider requires min != max)
+        if len(history) > 1:
+            ncol1, _ = st.columns([1, 3])
+            with ncol1:
+                n_choice = st.slider(
+                    "Show last N sessions",
+                    min_value=1,
+                    max_value=len(history),
+                    value=min(10, len(history)),
+                    help="Charts and baselines use only the selected sessions.",
+                )
+            history = history.sort_values("session_date").tail(n_choice)
+
         history = _one_camera_angle(history)
         flagged = _flagged_dates(repository, history)
         _render_trends(cfg, history, flagged)
@@ -83,15 +108,10 @@ def _one_camera_angle(history: pd.DataFrame) -> pd.DataFrame:
 
 def _render_summary(repository, user_id: str) -> None:
     summary = repository.summary(user_id)
-    columns = st.columns(4)
-    columns[0].metric("Sessions", summary["n_sessions"])
-    columns[1].metric("Low confidence", summary["n_low_confidence"])
-    columns[2].metric(
-        "Date range",
-        f"{summary['date_range'][0]} → {summary['date_range'][1]}"
-        if summary["date_range"] else "-",
-    )
-    columns[3].metric("Algorithm versions", len(summary["algo_versions"]))
+    # Sessions and date range are already in the summary line above.
+    # Only show Low confidence; algo versions get a warning if >1, not a metric.
+    if summary["n_low_confidence"] > 0:
+        st.caption(f"{summary['n_low_confidence']} low-confidence session(s) — excluded from baseline.")
 
     if len(summary["algo_versions"]) > 1:
         st.warning(
