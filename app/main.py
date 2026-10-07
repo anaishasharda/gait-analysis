@@ -31,6 +31,52 @@ from app.shared import get_config  # noqa: E402
 from app.views import analyse, calibration, limitations, trends  # noqa: E402
 from gaitscreen.version import ALGO_VERSION  # noqa: E402
 
+# Tier 1 UI: Inter font, hide chrome, style dropzone, sticky footer.
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+html, body, [class*="css"] { font-family: 'Inter', -apple-system, sans-serif; }
+[data-testid="stStatusWidget"] { display: none !important; }
+[data-testid="stDecoration"] { display: none !important; }
+[data-testid="stToolbar"] { display: none !important; }
+[data-testid="stFileUploaderDropzone"] {
+    border: 2px dashed #00695C !important;
+    border-radius: 14px !important;
+    background-color: #FFFFFF !important;
+    padding: 2rem 1.5rem !important;
+}
+[data-testid="stFileUploaderDropzone"] button {
+    background-color: #00695C !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 8px !important;
+    padding: 0.6rem 1.8rem !important;
+    font-weight: 600 !important;
+}
+.sticky-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background-color: #FFFFFF;
+    border-top: 1px solid #E0E0E0;
+    padding: 8px 24px;
+    font-size: 0.78rem;
+    color: #757575;
+    z-index: 999;
+    text-align: center;
+}
+.main .block-container { padding-bottom: 60px; }
+</style>
+""", unsafe_allow_html=True)
+
+# Sticky footer renders at top of script so it's visible even during analysis.
+st.markdown(
+    '<div class="sticky-footer">CadenceCare is a screening and trend-monitoring aid'
+    ', not a medical device. Gait analysis uses pose estimation (MediaPipe).</div>',
+    unsafe_allow_html=True,
+)
+
 PAGES = {
     "Analyse a walk": analyse.render,
     "Trends": trends.render,
@@ -77,11 +123,7 @@ def main() -> None:
 
     PAGES[choice](cfg)
 
-    st.divider()
-    st.caption(
-        "CadenceCare is a screening and trend-monitoring aid \u2014 not a medical "
-        "device. Analysis uses pose estimation (MediaPipe)."
-    )
+    # Footer now sticky (rendered above via CSS).
 
 
 main()

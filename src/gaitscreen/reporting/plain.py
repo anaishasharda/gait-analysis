@@ -438,6 +438,13 @@ def _verdict(result, cards: list[MetricCard], n_measured: int,
             "Repeat sessions are what make any of this meaningful.",
             "watch",
         )
+    if caveat:
+        return (
+            "Couldn't get a reliable read on this walk",
+            f"The individual measures look typical. {caveat.strip()} "
+            "Improve the recording and try again -- the feedback below says how.",
+            "watch",
+        )
     return (
         "Nothing stands out in this walk",
         f"All {n_measured} measures the tool could take sit in their typical "
