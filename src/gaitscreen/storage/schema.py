@@ -212,10 +212,14 @@ def get_connection(db_path=None, *, create: bool = True):
                 # Initialise schema on Turso (idempotent)
                 if create:
                     initialise(conn)
+                st.sidebar.caption("DEBUG: Using Turso backend")
                 return conn, "turso"
-            except Exception:
+            except Exception as e:
                 # Turso unreachable -- fall through to SQLite
+                st.sidebar.caption(f"DEBUG: Turso failed: {e}")
                 pass
+        else:
+            st.sidebar.caption("DEBUG: No Turso secrets, using SQLite")
     except Exception:
         # No streamlit secrets (e.g. CLI/testing) -- use SQLite
         pass
