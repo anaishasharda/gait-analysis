@@ -174,6 +174,55 @@ def connect(db_path: str | Path, *, create: bool = True) -> sqlite3.Connection:
     return conn
 
 
+def connect_turso(url: str, auth_token: str):
+    """Connect to Turso (serverless SQLite). Falls back gracefully on import failure.
+
+    Returns a libsql connection, or raises ImportError if libsql-experimental
+    is not installed. The caller is responsible for schema initialisation.
+    """
+    try:
+        import libsql_experimental as libsql
+    except ImportError as e:
+        raise ImportError(
+            "libsql-experimental is required for Turso support. "
+            "Install with: pip install libsql-experimental"
+        ) from e
+    conn = libsql.connect(database=url, auth_token=auth_token)
+    # libsql connections support the DB-API execute/commit interface
+    return conn
+
+
+def get_connection(db_path=None, *, create: bool = True):
+    """Get a database connection: Turso if configured, else local SQLite.
+
+    Checks Streamlit secrets for [turso] url and auth_token. If present and
+    libsql-experimental is installed, connects to Turso. Otherwise falls back
+    to local SQLite at db_path. This keeps the app working even if Turso is
+    unreachable -- it just won't persist across reboots.
+    """
+    # Try Turso first (only if secrets are configured)
+    try:
+        import streamlit as st
+        turso_cfg = st.secrets.get("turso", {})
+        url = turso_cfg.get("url")
+        token = turso_cfg.get("auth_token")
+        if url and token:
+            try:
+                conn = connect_turso(url, token)
+                # Initialise schema on Turso (idempotent)
+                if create:
+                    initialise(conn)
+                return conn, "turso"
+            except Exception:
+                # Turso unreachable -- fall through to SQLite
+                pass
+    except Exception:
+        # No streamlit secrets (e.g. CLI/testing) -- use SQLite
+        pass
+    # Fallback: local SQLite (ephemeral on Streamlit Cloud, persistent locally)
+    return connect(db_path, create=create), "sqlite"
+
+
 #: Columns added after the first release, as {table: {column: type}}. SQLite
 #: CREATE TABLE IF NOT EXISTS does nothing to a table that already exists, so a
 #: database created by an earlier version would silently keep the old columns

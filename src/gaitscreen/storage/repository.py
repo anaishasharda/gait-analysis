@@ -80,7 +80,9 @@ class SessionRepository:
 
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
-        self.conn: sqlite3.Connection = schema.connect(self.db_path)
+        # Turso if configured (persistent), else local SQLite (ephemeral on Cloud).
+        # get_connection returns (conn, backend) where backend is "turso" or "sqlite".
+        self.conn, self.backend = schema.get_connection(self.db_path)
 
     def close(self) -> None:
         self.conn.close()
