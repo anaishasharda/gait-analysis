@@ -180,15 +180,20 @@ def _sidebar(cfg: Config) -> dict:
                 help="Used to group this person's walks into a trend. Saved walks are grouped under this name.",
             ),
             "session_date": st.date_input("Date of recording", value=_local_today()),
-            "device": st.selectbox(
-                "Assistive device used",
-                ["none", "cane", "walking stick", "walker / frame", "other"],
-                help=(
-                    "Pose estimation cannot see a cane. It detects bodies, not "
-                    "objects. This entry is the authoritative record."
-                ),
-            ),
-            "notes": st.text_area("Notes (optional)", height=70),
+            # Assistive device hidden for pilot (all unaided walks).
+            # Code kept; uncomment the selectbox below to re-enable.
+            # "device": st.selectbox(
+            #     "Assistive device used",
+            #     ["none", "cane", "walking stick", "walker / frame", "other"],
+            #     help=(
+            #         "Pose estimation cannot see a cane. It detects bodies, not "
+            #         "objects. This entry is the authoritative record."
+            #     ),
+            # ),
+            "device": "none",
+            # Notes removed from UI (not used in pilot).
+            # Kept as "" because _save() and _render_result() expect it.
+            "notes": "",
         }
 
         st.subheader("Trend history")

@@ -142,20 +142,28 @@ def main() -> None:
         disabled=locked,
     )
     st.sidebar.divider()
-    show_technical = st.sidebar.checkbox(
+    # Technical details checkbox moved to bottom of sidebar (after page content).
+    # Read current value here so pages can use it during render.
+    show_technical = st.session_state.get("show_technical", False)
+    if locked:
+        st.sidebar.caption("Sidebar is disabled during analysis and will be re-enabled when it finishes.")
+
+    PAGES[choice](cfg)
+
+    # Technical details at bottom of sidebar
+    st.sidebar.divider()
+    new_technical = st.sidebar.checkbox(
         "Technical details",
-        value=st.session_state.get("show_technical", False),
+        value=show_technical,
         help="Show pipeline internals: algorithm version, technical caveats, diagnostic detail.",
         disabled=locked,
     )
-    if locked:
-        st.sidebar.caption("Sidebar is disabled during analysis and will be re-enabled when it finishes.")
-    st.session_state["show_technical"] = show_technical
-    if show_technical:
+    if new_technical != show_technical:
+        st.session_state["show_technical"] = new_technical
+        st.rerun()
+    if new_technical:
         st.sidebar.caption("Flag thresholds (illustrative):")
         _render_thresholds(cfg)
-
-    PAGES[choice](cfg)
 
     # Footer now sticky (rendered above via CSS).
 
