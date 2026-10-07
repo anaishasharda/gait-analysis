@@ -209,17 +209,23 @@ def get_connection(db_path=None, *, create: bool = True):
         if url and token:
             try:
                 conn = connect_turso(url, token)
-                # Initialise schema on Turso (idempotent)
+                # Initialise schema on Turso (idempotent).
+                # Note: libsql connections do not support the context-manager
+                # protocol, so we cannot use initialise() (which does
+                # "with conn:"). Execute DDL directly and commit instead.
                 if create:
-                    initialise(conn)
-                st.sidebar.caption("DEBUG: Using Turso backend")
+                    conn.executescript(_DDL)
+                    _add_missing_columns(conn)
+                    conn.execute(
+                        "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?) "
+                        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                        (str(SCHEMA_VERSION),),
+                    )
+                    conn.commit()
                 return conn, "turso"
-            except Exception as e:
+            except Exception:
                 # Turso unreachable -- fall through to SQLite
-                st.sidebar.caption(f"DEBUG: Turso failed: {e}")
                 pass
-        else:
-            st.sidebar.caption("DEBUG: No Turso secrets, using SQLite")
     except Exception:
         # No streamlit secrets (e.g. CLI/testing) -- use SQLite
         pass
