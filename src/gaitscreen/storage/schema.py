@@ -218,7 +218,12 @@ def get_connection(db_path=None, *, create: bool = True):
                     except Exception:
                         pass
                     _apply_ddl(conn)
-                    _add_missing_columns(conn)
+                    # A remote backend may reject PRAGMA table_info; a missing
+                    # migration is recoverable, losing the Turso path is not.
+                    try:
+                        _add_missing_columns(conn)
+                    except Exception:
+                        pass
                     conn.execute(
                         "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?) "
                         "ON CONFLICT(key) DO UPDATE SET value=excluded.value",

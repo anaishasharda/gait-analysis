@@ -139,9 +139,10 @@ class SessionRepository:
             )
             row["is_active"] = 1
         columns = ", ".join(row)
-        placeholders = ", ".join(f":{k}" for k in row)
+        placeholders = ", ".join("?" for _ in row)
         self.conn.execute(
-            f"INSERT INTO calibrations({columns}) VALUES({placeholders})", row
+            f"INSERT INTO calibrations({columns}) VALUES({placeholders})",
+            tuple(row.values()),
         )
         self.conn.commit()
         return calibration.calibration_id
@@ -205,12 +206,12 @@ class SessionRepository:
             row[column] = getattr(metrics, column, None)
 
         columns = ", ".join(row)
-        placeholders = ", ".join(f":{k}" for k in row)
+        placeholders = ", ".join("?" for _ in row)
         updates = ", ".join(f"{k}=excluded.{k}" for k in row if k != "session_id")
         self.conn.execute(
             f"INSERT INTO sessions({columns}) VALUES({placeholders}) "
             f"ON CONFLICT(session_id) DO UPDATE SET {updates}",
-            row,
+            tuple(row.values()),
         )
         self.conn.commit()
         return record.session_id

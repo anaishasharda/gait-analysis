@@ -305,7 +305,6 @@ def _run_inner(cfg: Config, uploaded, settings: dict) -> None:
             st.code(traceback.format_exc())
         st.session_state["result"] = None
         st.session_state["overlay"] = None
-    finally:
 
 
 def _render_overlay(cfg: Config, result, progress) -> dict | None:
@@ -540,4 +539,3 @@ def _save(cfg: Config, result, notes: str) -> None:
         )
     except Exception as exc:  # noqa: BLE001
         st.error(f"Could not save: {exc}")
-    finally:

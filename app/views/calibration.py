@@ -154,9 +154,7 @@ def _annotate(frame, p0, p1):
 
 def _save(cfg: Config, calibration: Calibration, travel_px: float | None = None) -> None:
     repository = open_repository(cfg)
-    try:
-        repository.save_calibration(calibration)
-    finally:
+    repository.save_calibration(calibration)
 
     st.success(f"Calibration `{calibration.calibration_id}` saved.")
     details = {
@@ -176,9 +174,7 @@ def _save(cfg: Config, calibration: Calibration, travel_px: float | None = None)
 
 def _show_existing(cfg: Config, user_id: str) -> None:
     repository = open_repository(cfg)
-    try:
-        existing = repository.active_calibration(user_id)
-    finally:
+    existing = repository.active_calibration(user_id)
 
     st.subheader("Current calibration")
     if existing is None:
