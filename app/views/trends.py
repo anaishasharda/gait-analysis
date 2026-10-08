@@ -59,7 +59,6 @@ def render(cfg: Config) -> None:
         _render_trends(cfg, history, flagged)
         _render_tables(repository, history)
     finally:
-        repository.close()
 
 
 #: How each stored view kind is described to someone reading their own trends.

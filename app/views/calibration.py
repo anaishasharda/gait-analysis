@@ -157,7 +157,6 @@ def _save(cfg: Config, calibration: Calibration, travel_px: float | None = None)
     try:
         repository.save_calibration(calibration)
     finally:
-        repository.close()
 
     st.success(f"Calibration `{calibration.calibration_id}` saved.")
     details = {
@@ -180,7 +179,6 @@ def _show_existing(cfg: Config, user_id: str) -> None:
     try:
         existing = repository.active_calibration(user_id)
     finally:
-        repository.close()
 
     st.subheader("Current calibration")
     if existing is None:

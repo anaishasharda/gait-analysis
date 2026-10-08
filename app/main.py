@@ -165,12 +165,15 @@ def main() -> None:
         st.sidebar.caption("Flag thresholds (illustrative):")
         _render_thresholds(cfg)
 
-    # Show storage backend status (Turso vs silent fallback) in sidebar
+    # Show storage backend unconditionally (which DB are we on?)
     try:
         from app.shared import open_repository
         _repo = open_repository(cfg)
-        if getattr(_repo, "backend_note", None):
-            st.sidebar.caption(f":orange[{_repo.backend_note}]")
+        _backend = getattr(_repo, "backend", "?")
+        st.sidebar.caption(f"Storage: {_backend}")
+        _note = getattr(_repo, "backend_note", None)
+        if _note:
+            st.sidebar.caption(f":orange[{_note}]")
     except Exception:
         pass
 

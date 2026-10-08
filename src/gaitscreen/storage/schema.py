@@ -212,6 +212,11 @@ def get_connection(db_path=None, *, create: bool = True):
                 conn = connect_turso(url, token)
                 # Initialise schema on Turso (idempotent).
                 if create:
+                    # Foreign keys default off; delete_session relies on CASCADE
+                    try:
+                        conn.execute("PRAGMA foreign_keys = ON")
+                    except Exception:
+                        pass
                     _apply_ddl(conn)
                     _add_missing_columns(conn)
                     conn.execute(
@@ -260,8 +265,13 @@ def _add_missing_columns(conn: sqlite3.Connection) -> list[str]:
 
 
 def _apply_ddl(conn) -> None:
-    """Run the DDL statement by statement: libsql has no executescript()."""
-    for statement in _DDL.split(";"):
+    """Run the DDL statement by statement: libsql has no executescript().
+
+    Comments are stripped first -- two of them contain a semicolon, and a
+    naive split on ";" cuts a CREATE TABLE in half.
+    """
+    body = "\n".join(line.split("--")[0] for line in _DDL.splitlines())
+    for statement in body.split(";"):
         if statement.strip():
             conn.execute(statement)
 
@@ -269,7 +279,7 @@ def _apply_ddl(conn) -> None:
 def initialise(conn: sqlite3.Connection) -> None:
     """Apply the DDL and record the schema version."""
     with conn:
-        conn.executescript(_DDL)
+        _apply_ddl(conn)
         _add_missing_columns(conn)
         conn.execute(
             "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?) "
