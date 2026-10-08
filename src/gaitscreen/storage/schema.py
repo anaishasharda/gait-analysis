@@ -201,6 +201,7 @@ def get_connection(db_path=None, *, create: bool = True):
     unreachable -- it just won't persist across reboots.
     """
     # Try Turso first (only if secrets are configured)
+    note = None
     try:
         import streamlit as st
         turso_cfg = st.secrets.get("turso", {})
@@ -210,11 +211,8 @@ def get_connection(db_path=None, *, create: bool = True):
             try:
                 conn = connect_turso(url, token)
                 # Initialise schema on Turso (idempotent).
-                # Note: libsql connections do not support the context-manager
-                # protocol, so we cannot use initialise() (which does
-                # "with conn:"). Execute DDL directly and commit instead.
                 if create:
-                    conn.executescript(_DDL)
+                    _apply_ddl(conn)
                     _add_missing_columns(conn)
                     conn.execute(
                         "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?) "
@@ -222,15 +220,13 @@ def get_connection(db_path=None, *, create: bool = True):
                         (str(SCHEMA_VERSION),),
                     )
                     conn.commit()
-                return conn, "turso"
-            except Exception:
-                # Turso unreachable -- fall through to SQLite
-                pass
+                return conn, "turso", None
+            except Exception as exc:
+                note = f"Turso unavailable ({exc!r}); using ephemeral local storage"
     except Exception:
         # No streamlit secrets (e.g. CLI/testing) -- use SQLite
         pass
-    # Fallback: local SQLite (ephemeral on Streamlit Cloud, persistent locally)
-    return connect(db_path, create=create), "sqlite"
+    return connect(db_path, create=create), "sqlite", note
 
 
 #: Columns added after the first release, as {table: {column: type}}. SQLite
@@ -263,10 +259,17 @@ def _add_missing_columns(conn: sqlite3.Connection) -> list[str]:
     return added
 
 
+def _apply_ddl(conn) -> None:
+    """Run the DDL statement by statement: libsql has no executescript()."""
+    for statement in _DDL.split(";"):
+        if statement.strip():
+            conn.execute(statement)
+
+
 def initialise(conn: sqlite3.Connection) -> None:
     """Apply the DDL and record the schema version."""
     with conn:
-        conn.executescript(_DDL)
+        _apply_ddl(conn)
         _add_missing_columns(conn)
         conn.execute(
             "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?) "

@@ -165,6 +165,15 @@ def main() -> None:
         st.sidebar.caption("Flag thresholds (illustrative):")
         _render_thresholds(cfg)
 
+    # Show storage backend status (Turso vs silent fallback) in sidebar
+    try:
+        from app.shared import open_repository
+        _repo = open_repository(cfg)
+        if getattr(_repo, "backend_note", None):
+            st.sidebar.caption(f":orange[{_repo.backend_note}]")
+    except Exception:
+        pass
+
     # Footer now sticky (rendered above via CSS).
 
 

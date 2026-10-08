@@ -81,8 +81,23 @@ class SessionRepository:
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
         # Turso if configured (persistent), else local SQLite (ephemeral on Cloud).
-        # get_connection returns (conn, backend) where backend is "turso" or "sqlite".
-        self.conn, self.backend = schema.get_connection(self.db_path)
+        # get_connection returns (conn, backend, note).
+        self.conn, self.backend, self.backend_note = schema.get_connection(self.db_path)
+
+    def _one(self, query, params=()):
+        """Fetch one row as a dict (works for sqlite3.Row and libsql tuple)."""
+        cur = self.conn.execute(query, params)
+        row = cur.fetchone()
+        if row is None:
+            return None
+        return dict(zip([d[0] for d in cur.description], tuple(row)))
+
+    def _frame(self, query, params=()):
+        """Fetch all rows as a DataFrame (works for both backends)."""
+        import pandas as pd
+        cur = self.conn.execute(query, params)
+        cols = [d[0] for d in cur.description]
+        return pd.DataFrame([tuple(r) for r in cur.fetchall()], columns=cols)
 
     def close(self) -> None:
         self.conn.close()
@@ -132,17 +147,17 @@ class SessionRepository:
         return calibration.calibration_id
 
     def active_calibration(self, user_id: str) -> Optional[Calibration]:
-        row = self.conn.execute(
+        row = self._one(
             "SELECT * FROM calibrations WHERE user_id=? AND is_active=1 "
             "ORDER BY created_at DESC LIMIT 1",
             (user_id,),
-        ).fetchone()
+        )
         return Calibration.from_row(row) if row else None
 
     def get_calibration(self, calibration_id: str) -> Optional[Calibration]:
-        row = self.conn.execute(
+        row = self._one(
             "SELECT * FROM calibrations WHERE calibration_id=?", (calibration_id,)
-        ).fetchone()
+        )
         return Calibration.from_row(row) if row else None
 
     # -- sessions --------------------------------------------------------
@@ -274,7 +289,7 @@ class SessionRepository:
             params.append(algo_version)
         query += " ORDER BY session_date ASC, created_at ASC"
 
-        frame = pd.read_sql_query(query, self.conn, params=params)
+        frame = self._frame(query, params)
         if not frame.empty:
             frame["session_date"] = pd.to_datetime(frame["session_date"])
         return frame
