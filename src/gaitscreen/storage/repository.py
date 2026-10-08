@@ -97,38 +97,38 @@ class SessionRepository:
     def ensure_user(
         self, user_id: str, display_name: Optional[str] = None, notes: Optional[str] = None
     ) -> None:
-        with self.conn:
-            self.conn.execute(
-                "INSERT INTO users(user_id, display_name, created_at, notes) "
-                "VALUES(?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET "
-                "display_name=COALESCE(excluded.display_name, users.display_name)",
-                (
-                    user_id,
-                    display_name,
-                    datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                    notes,
-                ),
-            )
+        self.conn.execute(
+            "INSERT INTO users(user_id, display_name, created_at, notes) "
+            "VALUES(?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET "
+            "display_name=COALESCE(excluded.display_name, users.display_name)",
+            (
+                user_id,
+                display_name,
+                datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                notes,
+            ),
+        )
 
+        self.conn.commit()
     def list_users(self) -> list[str]:
-        return [r["user_id"] for r in self.conn.execute("SELECT user_id FROM users ORDER BY user_id")]
+        return [r[0] for r in self.conn.execute("SELECT user_id FROM users ORDER BY user_id")]
 
     # -- calibration -----------------------------------------------------
     def save_calibration(self, calibration: Calibration, *, make_active: bool = True) -> str:
         self.ensure_user(calibration.user_id)
         row = calibration.to_row()
-        with self.conn:
-            if make_active:
-                self.conn.execute(
-                    "UPDATE calibrations SET is_active=0 WHERE user_id=?",
-                    (calibration.user_id,),
-                )
-                row["is_active"] = 1
-            columns = ", ".join(row)
-            placeholders = ", ".join(f":{k}" for k in row)
+        if make_active:
             self.conn.execute(
-                f"INSERT INTO calibrations({columns}) VALUES({placeholders})", row
+                "UPDATE calibrations SET is_active=0 WHERE user_id=?",
+                (calibration.user_id,),
             )
+            row["is_active"] = 1
+        columns = ", ".join(row)
+        placeholders = ", ".join(f":{k}" for k in row)
+        self.conn.execute(
+            f"INSERT INTO calibrations({columns}) VALUES({placeholders})", row
+        )
+        self.conn.commit()
         return calibration.calibration_id
 
     def active_calibration(self, user_id: str) -> Optional[Calibration]:
@@ -192,42 +192,42 @@ class SessionRepository:
         columns = ", ".join(row)
         placeholders = ", ".join(f":{k}" for k in row)
         updates = ", ".join(f"{k}=excluded.{k}" for k in row if k != "session_id")
-        with self.conn:
-            self.conn.execute(
-                f"INSERT INTO sessions({columns}) VALUES({placeholders}) "
-                f"ON CONFLICT(session_id) DO UPDATE SET {updates}",
-                row,
-            )
+        self.conn.execute(
+            f"INSERT INTO sessions({columns}) VALUES({placeholders}) "
+            f"ON CONFLICT(session_id) DO UPDATE SET {updates}",
+            row,
+        )
+        self.conn.commit()
         return record.session_id
 
     def save_flags(self, session_id: str, flags: Sequence[Flag]) -> None:
         """Replace this session's flags (reprocessing must not accumulate them)."""
-        with self.conn:
-            self.conn.execute("DELETE FROM session_flags WHERE session_id=?", (session_id,))
-            self.conn.executemany(
-                "INSERT INTO session_flags(session_id, code, metric, severity, "
-                "trigger, message, detail_json, confirmed) VALUES(?,?,?,?,?,?,?,?)",
-                [
-                    (
-                        session_id, f.code, f.metric, f.severity, f.trigger, f.message,
-                        json.dumps(f.detail), int(f.confirmed),
-                    )
-                    for f in flags
-                ],
-            )
+        self.conn.execute("DELETE FROM session_flags WHERE session_id=?", (session_id,))
+        self.conn.executemany(
+            "INSERT INTO session_flags(session_id, code, metric, severity, "
+            "trigger, message, detail_json, confirmed) VALUES(?,?,?,?,?,?,?,?)",
+            [
+                (
+                    session_id, f.code, f.metric, f.severity, f.trigger, f.message,
+                    json.dumps(f.detail), int(f.confirmed),
+                )
+                for f in flags
+            ],
+        )
 
+        self.conn.commit()
     def save_events(self, session_id: str, events: Iterable[GaitEvent]) -> None:
-        with self.conn:
-            self.conn.execute("DELETE FROM session_events WHERE session_id=?", (session_id,))
-            self.conn.executemany(
-                "INSERT INTO session_events(session_id, t, kind, side, frame, "
-                "confidence, method) VALUES(?,?,?,?,?,?,?)",
-                [
-                    (session_id, e.t, e.kind, e.side, e.frame, e.confidence, e.method)
-                    for e in events
-                ],
-            )
+        self.conn.execute("DELETE FROM session_events WHERE session_id=?", (session_id,))
+        self.conn.executemany(
+            "INSERT INTO session_events(session_id, t, kind, side, frame, "
+            "confidence, method) VALUES(?,?,?,?,?,?,?)",
+            [
+                (session_id, e.t, e.kind, e.side, e.frame, e.confidence, e.method)
+                for e in events
+            ],
+        )
 
+        self.conn.commit()
     def flags_for_session(self, session_id: str) -> list[Flag]:
         rows = self.conn.execute(
             "SELECT * FROM session_flags WHERE session_id=? ORDER BY severity DESC, code",
@@ -235,10 +235,10 @@ class SessionRepository:
         ).fetchall()
         return [
             Flag(
-                code=r["code"], metric=r["metric"], severity=r["severity"],
-                trigger=r["trigger"], message=r["message"],
-                detail=json.loads(r["detail_json"] or "{}"),
-                confirmed=bool(r["confirmed"]),
+                code=r[2], metric=r[3], severity=r[4],
+                trigger=r[5], message=r[6],
+                detail=json.loads(r[7] or "{}"),
+                confirmed=bool(r[8]),
             )
             for r in rows
         ]
@@ -289,12 +289,12 @@ class SessionRepository:
             "ORDER BY algo_version",
             (user_id,),
         ).fetchall()
-        return [r["algo_version"] for r in rows]
+        return [r[0] for r in rows]
 
     def delete_session(self, session_id: str) -> None:
-        with self.conn:
-            self.conn.execute("DELETE FROM sessions WHERE session_id=?", (session_id,))
+        self.conn.execute("DELETE FROM sessions WHERE session_id=?", (session_id,))
 
+        self.conn.commit()
     # -- convenience -----------------------------------------------------
     @staticmethod
     def metric_columns() -> tuple[str, ...]:

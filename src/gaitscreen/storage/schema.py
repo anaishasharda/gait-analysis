@@ -279,4 +279,4 @@ def schema_version(conn: sqlite3.Connection) -> int:
     row = conn.execute(
         "SELECT value FROM schema_meta WHERE key='schema_version'"
     ).fetchone()
-    return int(row["value"]) if row else 0
+    return int(row[0]) if row else 0
