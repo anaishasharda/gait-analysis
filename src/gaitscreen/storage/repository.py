@@ -86,7 +86,7 @@ class SessionRepository:
 
     def _one(self, query, params=()):
         """Fetch one row as a dict (works for sqlite3.Row and libsql tuple)."""
-        cur = self.conn.execute(query, params)
+        cur = self.conn.execute(query, tuple(params))
         row = cur.fetchone()
         if row is None:
             return None
@@ -95,7 +95,7 @@ class SessionRepository:
     def _frame(self, query, params=()):
         """Fetch all rows as a DataFrame (works for both backends)."""
         import pandas as pd
-        cur = self.conn.execute(query, params)
+        cur = self.conn.execute(query, tuple(params))
         cols = [d[0] for d in cur.description]
         return pd.DataFrame([tuple(r) for r in cur.fetchall()], columns=cols)
 
@@ -222,13 +222,13 @@ class SessionRepository:
         self.conn.executemany(
             "INSERT INTO session_flags(session_id, code, metric, severity, "
             "trigger, message, detail_json, confirmed) VALUES(?,?,?,?,?,?,?,?)",
-            [
+            tuple(
                 (
                     session_id, f.code, f.metric, f.severity, f.trigger, f.message,
                     json.dumps(f.detail), int(f.confirmed),
                 )
                 for f in flags
-            ],
+            ),
         )
 
         self.conn.commit()
@@ -237,10 +237,10 @@ class SessionRepository:
         self.conn.executemany(
             "INSERT INTO session_events(session_id, t, kind, side, frame, "
             "confidence, method) VALUES(?,?,?,?,?,?,?)",
-            [
+            tuple(
                 (session_id, e.t, e.kind, e.side, e.frame, e.confidence, e.method)
                 for e in events
-            ],
+            ),
         )
 
         self.conn.commit()
