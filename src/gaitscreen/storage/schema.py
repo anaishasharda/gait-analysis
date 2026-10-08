@@ -269,7 +269,7 @@ def _apply_ddl(conn) -> None:
 def initialise(conn: sqlite3.Connection) -> None:
     """Apply the DDL and record the schema version."""
     with conn:
-        _apply_ddl(conn)
+        conn.executescript(_DDL)
         _add_missing_columns(conn)
         conn.execute(
             "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?) "
