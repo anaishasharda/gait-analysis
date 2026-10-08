@@ -14,16 +14,21 @@ from datetime import date, datetime, timedelta, timezone
 import pandas as pd
 import streamlit as st
 
-from app.shared import (PROJECT_ROOT, VIDEO_TYPES, bullet_list, disclaimer,
-                        open_repository, render_flags, render_metrics,
+from app import ui
+from app.shared import (PROJECT_ROOT, VIDEO_TYPES, bullet_list, current_setup,
+                        disclaimer, open_repository, render_flags, render_metrics,
                         render_recording_feedback,
                         render_recording_measurements, safe_user_id, save_upload)
 from app.widgets_plain import (render_annotated_video, render_plain_cards,
                                render_verdict)
+from gaitscreen.calibration.model import CalibrationError
+from gaitscreen.calibration.setup import MAX_COVERAGE_M, MIN_COVERAGE_M, save_setup
 from gaitscreen.config import Config
+from gaitscreen.io import video as video_io
 from gaitscreen.pipeline import analyse_video, persist_session
 from gaitscreen.reporting import charts
 from gaitscreen.reporting.overlay import ffmpeg_available, render_overlay_video
+from gaitscreen.reporting.plain import _plain_unmeasured as plain_unmeasured
 from gaitscreen.reporting.plain import summarise
 from gaitscreen.segmentation.events import independent_cadence_spm
 from gaitscreen.storage.artifacts import SessionArtifacts
@@ -84,23 +89,24 @@ these applied to your clip and what to change.
 
 
 def render(cfg: Config) -> None:
-    st.header("Analyse a walk")
+    ui.hero(
+        "Analyse a walk",
+        "Upload a side-on video of someone walking across the frame. The tool "
+        "tracks their steps and reports walking speed, rhythm and evenness, with "
+        "the tracking drawn over the video so you can check it.",
+    )
     disclaimer()
 
-    settings = _sidebar(cfg)
-
-    # Lock the uploader during analysis: uploading mid-run orphans the
-    # progress bar. User waits for completion, then uploads.
+    # Lock the inputs during analysis: uploading mid-run orphans the progress
+    # bar. The user waits for completion, then uploads.
     locked = (st.session_state.get("analysing", False)
-          or st.session_state.get("analysis_phase") in (2, 3))
-    uploaded = st.file_uploader(
-        "Upload a side-on video (person walking across the frame)", type=VIDEO_TYPES,
-        disabled=locked,
-    )
-    if locked:
-        st.caption("Upload is disabled during analysis and will be re-enabled when it finishes.")
+              or st.session_state.get("analysis_phase") in (2, 3))
+    setup = current_setup(cfg)
 
-    # If the uploaded file differs from the one that was analyzed, the
+    _camera_step(cfg, setup, locked)
+    settings, uploaded = _walk_step(setup, locked)
+
+    # If the uploaded file differs from the one that was analysed, the
     # displayed results are stale. Clear them immediately.
     # Key = name + size (file_id is not reliable across uploads).
     def _file_key(f):
@@ -112,9 +118,6 @@ def render(cfg: Config) -> None:
         if analyzed_key is not None and uploaded_key != analyzed_key:
             st.session_state["result"] = None
             st.session_state["overlay"] = None
-
-    with st.expander("Recording guidance: read before your first recording"):
-        st.markdown(RECORDING_GUIDANCE)
 
     # Phase 2: render cleared UI (no stale results), then trigger phase 3.
     if st.session_state.get("analysis_phase") == 2:
@@ -133,7 +136,7 @@ def render(cfg: Config) -> None:
     if st.session_state.get("analysis_phase") == 3:
         st.session_state["analysis_phase"] = None
         if uploaded is not None:
-            _run(cfg, uploaded, settings)
+            _run(cfg, uploaded, settings, setup)
         st.rerun()
         return
 
@@ -155,18 +158,19 @@ def render(cfg: Config) -> None:
 
     existing = st.session_state.get("result")
     if existing is not None and uploaded is None:
-        _render_result(cfg, existing, settings["notes"])
-        if st.button("Analyse a new video", type="secondary"):
+        _render_result(cfg, existing, settings)
+        if st.button("Analyse a new video", type="secondary",
+                     icon=":material/restart_alt:"):
             st.session_state["result"] = None
             st.session_state["overlay"] = None
             st.rerun()
         return
 
     if uploaded is None:
-        st.info("Upload a video to begin.")
         return
 
-    if st.button("Analyse", type="primary"):
+    if st.button("Analyse this walk", type="primary", icon=":material/play_arrow:",
+                 disabled=setup is None):
         # Clear old results immediately so the pane doesn't show stale metrics
         # while the new analysis runs.
         st.session_state["result"] = None
@@ -175,106 +179,149 @@ def render(cfg: Config) -> None:
         st.rerun()
 
     if st.session_state.get("result") is not None:
-        _render_result(cfg, st.session_state["result"], settings["notes"])
+        _render_result(cfg, st.session_state["result"], settings)
 
 
-def _sidebar(cfg: Config) -> dict:
-    with st.sidebar:
-        st.subheader("Session details")
-        settings = {
-            "user_id": st.text_input(
-                "Person name",
-                value="",
-                placeholder="e.g. Bob",
-                help="Used to group this person's walks into a trend. Saved walks are grouped under this name.",
-            ),
-            "session_date": st.date_input("Date of recording", value=_local_today()),
-            # Assistive device hidden for pilot (all unaided walks).
-            # Code kept; uncomment the selectbox below to re-enable.
-            # "device": st.selectbox(
-            #     "Assistive device used",
-            #     ["none", "cane", "walking stick", "walker / frame", "other"],
-            #     help=(
-            #         "Pose estimation cannot see a cane. It detects bodies, not "
-            #         "objects. This entry is the authoritative record."
-            #     ),
-            # ),
-            "device": "none",
-            # Notes removed from UI (not used in pilot).
-            # Kept as "" because _save() and _render_result() expect it.
-            "notes": "",
-        }
+# --------------------------------------------------------------------------
+# steps
+# --------------------------------------------------------------------------
+def _camera_step(cfg: Config, setup, locked: bool) -> None:
+    """Step 1: the camera setup has to exist before anything is analysed.
 
-        st.subheader("Trend history")
-        result = st.session_state.get("result")
-        person = settings["user_id"].strip()
-        if result is None:
-            st.caption("Analyse a walk first, then save it here to build this person's trend.")
-        elif st.session_state.get("result_saved"):
-            st.caption(f"Saved to {result.user_id}'s trend. Open the Trends page to see it in context.")
-        else:
-            label = f"Save this walk to {person}'s trend" if person else "Save this walk"
-            if st.button(label, type="primary"):
-                if not person:
-                    st.warning("Enter a person name above first, then click Save again.")
-                else:
-                    result.user_id = safe_user_id(person)
-                    _save(cfg, result, settings["notes"])
-                    st.session_state["result_saved"] = True
-                    st.rerun()
+    Walking speed is the measure the pilot most wants to show, and it is the
+    only one that needs a real distance. Analysing without it would quietly
+    produce a result missing its headline number, so the upload stays closed
+    until the setup is in. It can be entered right here, so the gate costs one
+    field rather than a trip to another page.
+    """
+    with st.container(border=True):
+        if setup is not None:
+            top = st.columns([4, 1], vertical_alignment="center")
+            with top[0]:
+                ui.step(1, "Camera setup", state="done",
+                        hint=f"The camera view covers {setup.coverage_m:.2f} m of floor "
+                             "along the walking line, so walking speed will be shown.")
+            with top[1]:
+                ui.nav_button("Change", "Camera setup", key="analyse_change_setup",
+                              icon=":material/edit:", disabled=locked)
+            return
 
-        st.subheader("Processing options")
-        settings["use_calibration"] = st.checkbox(
-            "Use this person's saved calibration", value=True,
-            help="Needed for walking speed in m/s. Everything else works without it.",
-        )
-        settings["camera_check"] = st.checkbox(
-            "Check for camera movement", value=True,
-            help=(
-                "Tracks background features to detect a panning camera. Slower, "
-                "but a camera that follows the subject makes speed meaningless."
-            ),
-        )
-        settings["make_video"] = st.checkbox(
-            "Create the annotated video", value=True,
-            help=(
-                "Replays the clip with the tracked skeleton and detected steps "
-                "drawn on, so you can see what the tool saw. Adds a few seconds."
-            ),
-        )
-        if settings["make_video"] and not ffmpeg_available():
-            st.caption(
-                ":orange[ffmpeg is not installed, so the annotated video may not "
-                "play in the browser. It will still be downloadable.]"
+        ui.step(1, "Set up the camera first", state="current",
+                hint="Enter how much floor the camera sees, measured along the line "
+                     "the person walks: tape marks at the left and right edges of the "
+                     "picture, and the distance between them.")
+        row = st.columns([1.2, 1, 1.4], vertical_alignment="bottom")
+        with row[0]:
+            coverage = st.number_input(
+                "Floor length the camera sees (metres)", min_value=MIN_COVERAGE_M,
+                max_value=MAX_COVERAGE_M, value=4.0, step=0.05, format="%.2f",
+                disabled=locked, key="quick_coverage",
             )
-    return settings
+        with row[1]:
+            if st.button("Save setup", type="primary", icon=":material/save:",
+                         disabled=locked, key="quick_setup_save"):
+                try:
+                    save_setup(open_repository(cfg), coverage)
+                    st.toast(f"Camera setup saved: {coverage:.2f} m", icon="✅")
+                    st.rerun()
+                except CalibrationError as exc:
+                    st.error(str(exc))
+        with row[2]:
+            ui.nav_button("How to measure it", "Camera setup", key="analyse_setup_help",
+                          icon=":material/help:", disabled=locked)
 
 
-def _run(cfg: Config, uploaded, settings: dict) -> None:
+def _walk_step(setup, locked: bool) -> tuple[dict, object]:
+    """Step 2: who is walking, when, and the video itself."""
+    ready = setup is not None
+    with st.container(border=True):
+        ui.step(2, "Choose the walk", state="current" if ready else "todo",
+                hint="Name the person so the walk can be added to their trend.")
+        details = st.columns(2)
+        with details[0]:
+            person = st.text_input(
+                "Person name", key="person_name", placeholder="e.g. Bob",
+                disabled=locked,
+                help="Used to group this person's walks into a trend.",
+            )
+        with details[1]:
+            # Seeded through session state rather than value=: the key is kept
+            # alive across pages (see main.py), and Streamlit warns when a widget
+            # gets both.
+            st.session_state.setdefault("session_date", _local_today())
+            when = st.date_input("Date of recording", key="session_date",
+                                 disabled=locked)
+
+        uploaded = st.file_uploader(
+            "Upload a side-on video (person walking across the frame)",
+            type=VIDEO_TYPES, disabled=locked or not ready,
+        )
+        if locked:
+            st.caption("Upload is disabled during analysis and will be re-enabled "
+                       "when it finishes.")
+        elif uploaded is None:
+            st.info("Upload a video to begin." if ready else
+                    "Upload a video to begin once the camera setup above is saved.",
+                    icon=":material/upload:")
+
+        with st.expander("Processing options", icon=":material/tune:"):
+            camera_check = st.checkbox(
+                "Check for camera movement", value=True, disabled=locked,
+                help="Tracks background features to detect a panning camera. Slower, "
+                     "but a camera that follows the subject makes speed meaningless.",
+            )
+            make_video = st.checkbox(
+                "Create the annotated video", value=True, disabled=locked,
+                help="Replays the clip with the tracked skeleton and detected steps "
+                     "drawn on, so you can see what the tool saw. Adds a few seconds.",
+            )
+            if make_video and not ffmpeg_available():
+                st.caption(":orange[ffmpeg is not installed, so the annotated video may "
+                           "not play in the browser. It will still be downloadable.]")
+        with st.expander("Recording guidance: read before your first recording",
+                         icon=":material/videocam:"):
+            st.markdown(RECORDING_GUIDANCE)
+
+    settings = {
+        "user_id": (person or "").strip(),
+        "session_date": when,
+        # Assistive device hidden for pilot (all unaided walks).
+        "device": "none",
+        # Notes not used in the pilot; kept because _save() expects them.
+        "notes": "",
+        "camera_check": camera_check,
+        "make_video": make_video,
+    }
+    return settings, uploaded
+
+
+def _run(cfg: Config, uploaded, settings: dict, setup) -> None:
     st.session_state["analysing"] = True
     st.session_state["progress_pct"] = 0.0
     st.session_state["progress_text"] = "Starting…"
     try:
-        _run_inner(cfg, uploaded, settings)
+        _run_inner(cfg, uploaded, settings, setup)
     finally:
         st.session_state["analysing"] = False
         st.session_state.pop("progress_pct", None)
         st.session_state.pop("progress_text", None)
 
 
-def _run_inner(cfg: Config, uploaded, settings: dict) -> None:
+def _run_inner(cfg: Config, uploaded, settings: dict, setup) -> None:
     path = save_upload(uploaded, settings["user_id"])
     session_date = settings["session_date"].isoformat()
     progress = st.progress(0.0, text="Tracking the person in the video…")
     repository = open_repository(cfg)
 
     try:
-        calibration = (
-            repository.active_calibration(settings["user_id"])
-            if settings["use_calibration"] else None
-        )
+        # The camera setup is a length across the whole frame, so it is turned
+        # into a calibration at this video's own resolution.
+        calibration = None
+        if setup is not None:
+            info = video_io.probe(path, cfg)
+            calibration = setup.calibration_for(info.width, info.height)
         history = repository.sessions_for_user(
-            settings["user_id"], before_date=session_date
+            safe_user_id(settings["user_id"]), before_date=session_date
         )
 
         # Frame count is not reliably known before reading, so the bar runs off
@@ -363,10 +410,13 @@ def _render_overlay(cfg: Config, result, progress) -> dict | None:
 # --------------------------------------------------------------------------
 # results
 # --------------------------------------------------------------------------
-def _render_result(cfg: Config, result, notes: str) -> None:
-    st.divider()
+def _render_result(cfg: Config, result, settings: dict) -> None:
     summary = summarise(
         result, cfg, include_technical=st.session_state.get("show_technical", False))
+
+    ui.section("Results", getattr(result.extraction.info.path, "name", ""))
+    _headline_tiles(result)
+    _save_panel(cfg, result, settings)
 
     if _is_coronal(result):
         # Said before the numbers, not after. Someone who filmed from the wrong
@@ -385,16 +435,75 @@ def _render_result(cfg: Config, result, notes: str) -> None:
 
     render_verdict(summary)
 
-    st.subheader("What the walk looked like")
+    ui.section("What the walk looked like")
     render_plain_cards(summary)
 
-    st.subheader("See it for yourself")
+    ui.section("See it for yourself",
+               "The tracked skeleton and detected steps, drawn over the video.")
     render_annotated_video(st.session_state.get("overlay"))
 
-    st.subheader("How to improve the recording")
+    ui.section("How to improve the recording")
     render_recording_feedback(result.diagnostics, expanded=False)
 
     _render_technical(cfg, result)
+
+
+def _headline_tiles(result) -> None:
+    """Speed first: it is the measure the camera setup exists to produce."""
+    metrics = result.metrics
+    speed = metrics.gait_speed_mps
+    if speed is not None:
+        speed_tile = ui.tile("Walking speed", f"{speed:.2f}", unit="m/s",
+                             sub=f"About {speed * 3.6:.1f} km/h", tone="accent")
+    else:
+        reason = metrics.unavailable.get("gait_speed_mps")
+        speed_tile = ui.tile("Walking speed", "Not measured",
+                             sub=plain_unmeasured(reason), tone="watch")
+    cadence = metrics.cadence_spm
+    cycles = result.analysis.cycle_summary
+    quality = result.quality
+    ui.tiles([
+        speed_tile,
+        ui.tile("Steps per minute", f"{cadence:.0f}" if cadence else "—",
+                sub="how often a step is taken"),
+        ui.tile("Usable strides", f"{cycles.get('n_valid', 0)}",
+                sub=f"of {cycles.get('n_total', 0)} detected"),
+        ui.tile("Recording quality", f"{quality.score:.0%}",
+                sub=("lower quality: left out of the usual range"
+                     if quality.low_confidence else "good enough to trend"),
+                tone="watch" if quality.low_confidence else "good"),
+    ])
+
+
+def _save_panel(cfg: Config, result, settings: dict) -> None:
+    """Adding the walk to the person's trend is a deliberate act, not automatic:
+    a pilot user analyses plenty of test clips that should never enter anyone's
+    history."""
+    person = settings["user_id"]
+    with st.container(border=True):
+        cols = st.columns([3, 1.3], vertical_alignment="center")
+        if st.session_state.get("result_saved"):
+            with cols[0]:
+                st.markdown(f":material/check_circle: **Saved to {result.user_id}'s "
+                            "trend.**")
+            with cols[1]:
+                ui.nav_button("Open trends", "Trends", key="result_to_trends",
+                              icon=":material/monitoring:")
+            return
+        with cols[0]:
+            if person:
+                st.markdown(f"**Add this walk to {person}'s trend?** Only saved walks "
+                            "count towards their usual range.")
+            else:
+                st.markdown("**Add this walk to a trend?** Enter the person's name in "
+                            "step 2 above first.")
+        with cols[1]:
+            if st.button("Save to trend", type="primary", icon=":material/bookmark_add:",
+                         disabled=not person, key="save_to_trend"):
+                result.user_id = safe_user_id(person)
+                _save(cfg, result, settings["notes"])
+                st.session_state["result_saved"] = True
+                st.rerun()
 
 
 def _is_coronal(result) -> bool:

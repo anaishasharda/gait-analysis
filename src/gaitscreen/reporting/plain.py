@@ -139,8 +139,9 @@ PLAIN: dict[str, dict] = {
 #: The full technical reason is still available and still shown on request; this
 #: is what leads.
 UNMEASURED_PLAIN: list[tuple[str, str]] = [
-    ("no calibration", "Needs a one-off setup step to convert pixels into metres. "
-                       "Everything else on this page works without it."),
+    ("no calibration", "Needs a one-off setup step to convert pixels into metres: "
+                       "enter how much floor the camera sees on the Camera setup "
+                       "page. Everything else on this page works without it."),
     ("forward travel", "The person does not cross the frame in this video, so "
                        "there is no distance to measure speed over."),
     ("camera itself moved", "The camera moved during the recording, so distance "

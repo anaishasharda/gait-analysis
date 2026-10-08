@@ -61,6 +61,25 @@ def open_repository(_cfg: Config) -> SessionRepository:
     return SessionRepository(_cfg.resolve_path("storage.db_path", PROJECT_ROOT))
 
 
+def list_people(repository: SessionRepository) -> list[str]:
+    """People with stored data. The camera setup lives in the same table, but
+    it is not a person and must never appear in a person picker."""
+    from gaitscreen.calibration.setup import is_reserved
+
+    return [u for u in repository.list_users() if not is_reserved(u)]
+
+
+def current_setup(cfg: Config):
+    """The active camera setup, or None. Never raises: a storage hiccup must
+    read as "not set up" on screen, not as a crashed page."""
+    from gaitscreen.calibration.setup import load_setup
+
+    try:
+        return load_setup(open_repository(cfg))
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def safe_user_id(user_id: str) -> str:
     """Filesystem/DB-safe version of a person name."""
     return re.sub(r'[\\/:*?"<>|]', "", user_id or "_unassigned").strip() or "_unassigned"
@@ -86,10 +105,10 @@ def save_upload(uploaded, user_id: str) -> Path:
 # --------------------------------------------------------------------------
 def disclaimer() -> None:
     st.caption(
-        "Screening and trend-monitoring tool (**not a diagnostic instrument**). "
-        "It is built to flag *changes* in one person's walking over time. "
-        "All clinical thresholds are illustrative and must be reviewed against "
-        "current geriatric literature before real use."
+        ":material/info: Screening and trend-monitoring tool (**not a diagnostic "
+        "instrument**). It is built to flag *changes* in one person's walking over "
+        "time. All clinical thresholds are illustrative and must be reviewed "
+        "against current geriatric literature before real use."
     )
 
 

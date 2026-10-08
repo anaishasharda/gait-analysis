@@ -39,8 +39,9 @@ VIDEO_CAPTION = (
 
 def render_verdict(summary) -> None:
     """The single line that leads the results page."""
-    renderer = TONE_RENDERER.get(summary.tone, st.info)
-    renderer("### " + summary.headline + "\n\n" + summary.sub_headline)
+    from app import ui
+
+    ui.banner(summary.headline, summary.sub_headline, tone=summary.tone)
     if summary.walk_description:
         st.caption(summary.walk_description)
 
