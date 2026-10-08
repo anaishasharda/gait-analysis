@@ -328,8 +328,11 @@ def _session_log(history: pd.DataFrame, flags: dict) -> None:
     with st.expander("Full session table (technical)", icon=":material/table:"):
         columns = ["session_date", "algo_version", *CORE_METRICS,
                    "n_strides_valid", "quality_score", "low_confidence"]
-        st.dataframe(history[[c for c in columns if c in history]],
-                     hide_index=True, width="stretch")
+        _tech = history[[c for c in columns if c in history]].copy()
+        # Round all numeric columns to 2 decimals for display
+        for _col in _tech.select_dtypes(include=["float64", "float32"]).columns:
+            _tech[_col] = _tech[_col].round(2)
+        st.dataframe(_tech, hide_index=True, width="stretch")
 
 
 def _flagged_dates(history: pd.DataFrame, flags: dict) -> dict[str, list]:
