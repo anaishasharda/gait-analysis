@@ -165,7 +165,13 @@ def connect(db_path: str | Path, *, create: bool = True) -> sqlite3.Connection:
     elif not db_path.exists():
         raise FileNotFoundError(f"no gaitscreen database at {db_path}")
 
-    conn = sqlite3.connect(db_path)
+    # check_same_thread=False: the repository is cached with
+    # @st.cache_resource and Streamlit reruns the script on a different
+    # thread each time, so the creating thread is not the using thread.
+    # sqlite3.threadsafety is 3 (serialized), so one shared connection is
+    # safe; without this every rerun after the first raises
+    # ProgrammingError.
+    conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")
