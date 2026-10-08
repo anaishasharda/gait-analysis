@@ -75,6 +75,55 @@ class SessionRecord:
             )
 
 
+#: Errors that mean the server forgot this connection's stream, not that the
+#: query was wrong. Turso closes idle Hrana streams, and a cached connection
+#: outlives them.
+_STREAM_GONE = ("stream not found", "stream expired", "stream is closed")
+
+
+class _ReconnectingConnection:
+    """A connection that reopens itself when its remote stream has expired.
+
+    Transparent for local SQLite, which never raises these. Only ``execute``,
+    ``executemany`` and ``commit`` are proxied, which is everything the
+    repository calls.
+    """
+
+    def __init__(self, factory):
+        self._factory = factory
+        self._conn, self.backend, self.note = factory()
+
+    def _call(self, name, *args, **kwargs):
+        try:
+            return getattr(self._conn, name)(*args, **kwargs)
+        except Exception as exc:
+            if not any(s in str(exc).lower() for s in _STREAM_GONE):
+                raise
+            # The stream is gone, not the database. Reopen and try once more;
+            # a second failure is a real error and propagates.
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+            self._conn, self.backend, self.note = self._factory()
+            return getattr(self._conn, name)(*args, **kwargs)
+
+    def execute(self, *args, **kwargs):
+        return self._call("execute", *args, **kwargs)
+
+    def executemany(self, *args, **kwargs):
+        return self._call("executemany", *args, **kwargs)
+
+    def commit(self, *args, **kwargs):
+        return self._call("commit", *args, **kwargs)
+
+    def close(self):
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+
+
 class SessionRepository:
     """Thin data-access layer over the SQLite schema."""
 
@@ -82,7 +131,11 @@ class SessionRepository:
         self.db_path = Path(db_path)
         # Turso if configured (persistent), else local SQLite (ephemeral on Cloud).
         # get_connection returns (conn, backend, note).
-        self.conn, self.backend, self.backend_note = schema.get_connection(self.db_path)
+        self.conn = _ReconnectingConnection(
+            lambda: schema.get_connection(self.db_path)
+        )
+        self.backend = self.conn.backend
+        self.backend_note = self.conn.note
 
     def _one(self, query, params=()):
         """Fetch one row as a dict (works for sqlite3.Row and libsql tuple)."""
@@ -126,7 +179,10 @@ class SessionRepository:
 
         self.conn.commit()
     def list_users(self) -> list[str]:
-        return [r[0] for r in self.conn.execute("SELECT user_id FROM users ORDER BY user_id")]
+        rows = self.conn.execute(
+            "SELECT user_id FROM users ORDER BY user_id", ()
+        ).fetchall()
+        return [r[0] for r in rows]
 
     # -- calibration -----------------------------------------------------
     def save_calibration(self, calibration: Calibration, *, make_active: bool = True) -> str:

@@ -264,7 +264,8 @@ def _add_missing_columns(conn: sqlite3.Connection) -> list[str]:
     added: list[str] = []
     for table, columns in _ADDED_COLUMNS.items():
         existing = {
-            row[1] for row in conn.execute(f"PRAGMA table_info({table})")
+            row[1]
+            for row in conn.execute(f"PRAGMA table_info({table})", ()).fetchall()
         }
         if not existing:
             continue  # table not created yet; the DDL will do it
