@@ -51,14 +51,9 @@ def get_config() -> Config:
     return Config.load()
 
 
-@st.cache_resource
-def open_repository(_cfg: Config) -> SessionRepository:
-    """Open the session database (cached: one connection per session).
-
-    Callers must NOT close the returned repository; the cached resource
-    owns its lifetime.
-    """
-    return SessionRepository(_cfg.resolve_path("storage.db_path", PROJECT_ROOT))
+def open_repository(cfg: Config) -> SessionRepository:
+    """Open the session database. Callers are responsible for closing it."""
+    return SessionRepository(cfg.resolve_path("storage.db_path", PROJECT_ROOT))
 
 
 def safe_user_id(user_id: str) -> str:
