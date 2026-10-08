@@ -137,6 +137,15 @@ def render(cfg: Config) -> None:
         st.rerun()
         return
 
+    _err = st.session_state.get("last_error")
+    if _err:
+        st.error("The last analysis failed.")
+        with st.expander("Technical detail (from the failed run)"):
+            st.code(_err)
+        if st.button("Dismiss error"):
+            st.session_state.pop("last_error", None)
+            st.rerun()
+
     if st.session_state.get("analysing", False):
         pct = st.session_state.get("progress_pct", 0.0)
         txt = st.session_state.get("progress_text", "Processing…")
@@ -300,9 +309,12 @@ def _run_inner(cfg: Config, uploaded, settings: dict) -> None:
         progress.progress(1.0, text="Done")
     except Exception as exc:  # noqa: BLE001 - surface the error, don't kill the app
         progress.empty()
+        detail = traceback.format_exc()
+        print("ANALYSIS FAILED\n" + detail, flush=True)
+        st.session_state["last_error"] = detail
         st.error(f"Analysis failed: {exc}")
         with st.expander("Technical detail"):
-            st.code(traceback.format_exc())
+            st.code(detail)
         st.session_state["result"] = None
         st.session_state["overlay"] = None
 
