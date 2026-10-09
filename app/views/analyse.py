@@ -651,12 +651,35 @@ def _render_diagnostics(cfg: Config, result) -> None:
 def _save(cfg: Config, result, notes: str) -> None:
     repository = open_repository(cfg)
     try:
+        # A session_id is person + date + file name, and the insert upserts.
+        # So re-saving one clip on one day corrects that row instead of adding
+        # a point. Counting either side of the save is the only way to tell
+        # "updated" from "silently lost".
+        n_before = len(repository.sessions_for_user(result.user_id))
         session_id = persist_session(
             result, cfg, repository, project_root=PROJECT_ROOT, notes=notes or None
         )
+        n_after = len(repository.sessions_for_user(result.user_id))
+        added = n_after > n_before
+        print(f"SAVED session={session_id} user={result.user_id} "
+              f"{'added' if added else 'updated'} total={n_after}", flush=True)
         st.success(
-            f"Saved as session `{session_id}` for **{result.user_id}**. "
-            "Open the Trends page to see it in context."
+            f"{'Saved' if added else 'Updated'} session `{session_id}` for "
+            f"**{result.user_id}**, who now has {n_after} saved "
+            f"session{'s' if n_after != 1 else ''}."
         )
+        if not added:
+            st.info(
+                "This updated an existing session rather than adding one. A "
+                "session is identified by person, recording date and video "
+                "file name, so re-analysing the same clip corrects its data "
+                "point instead of duplicating the walk. To add a point, use a "
+                "different clip or change the recording date."
+            )
     except Exception as exc:  # noqa: BLE001
+        detail = traceback.format_exc()
+        print("SAVE FAILED\n" + detail, flush=True)
+        st.session_state["last_error"] = detail
         st.error(f"Could not save: {exc}")
+        with st.expander("Technical detail"):
+            st.code(detail)

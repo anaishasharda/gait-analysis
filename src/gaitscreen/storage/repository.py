@@ -105,7 +105,21 @@ class _ReconnectingConnection:
                 self._conn.close()
             except Exception:
                 pass
-            self._conn, self.backend, self.note = self._factory()
+            conn, backend, note = self._factory()
+            if backend != self.backend:
+                # get_connection() falls back to local SQLite when Turso is
+                # unreachable. Accepting that here would move the data to a
+                # different database without anyone noticing.
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                raise RuntimeError(
+                    f"storage backend changed from {self.backend!r} to "
+                    f"{backend!r} while reconnecting ({note}); refusing to "
+                    f"read or write a different database"
+                ) from exc
+            self._conn, self.note = conn, note
             return getattr(self._conn, name)(*args, **kwargs)
 
     def execute(self, *args, **kwargs):
