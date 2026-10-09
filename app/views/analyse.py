@@ -66,7 +66,7 @@ real pilot recordings, not from theory.
    the precision of everything. Head to floor, with a little room to spare.
 3. **Legs and ankles visible.** Loose or flowing trousers hide the knee and
    ankle, and the tracker then *infers* where they are rather than seeing them.
-   producing confident, wrong numbers. Fitted trousers, leggings, shorts, or
+   Producing confident, wrong numbers. Fitted trousers, leggings, shorts, or
    loose trousers rolled up.
 4. **Fixed camera, square to the walking path.** On a tripod or propped against
    something solid. Never handheld, and never following the person. Stand level

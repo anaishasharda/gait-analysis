@@ -32,7 +32,7 @@ st.set_page_config(page_title="CadenceCare", page_icon="🚶", layout="wide",
                    initial_sidebar_state="auto")
 
 from app import ui  # noqa: E402
-from app.shared import get_config, open_repository  # noqa: E402
+from app.shared import get_config  # noqa: E402
 from app.views import analyse, calibration, limitations, trends  # noqa: E402
 
 ui.inject_css()
@@ -119,16 +119,6 @@ def main() -> None:
             st.caption("Flag thresholds (illustrative):")
             _render_thresholds(cfg)
 
-        # Which database are we on? Matters on Streamlit Cloud, where local
-        # SQLite does not survive a restart.
-        try:
-            repository = open_repository(cfg)
-            st.caption(f"Storage: {getattr(repository, 'backend', '?')}")
-            note = getattr(repository, "backend_note", None)
-            if note:
-                st.caption(f":orange[{note}]")
-        except Exception:  # noqa: BLE001 - a status line must never break the page
-            pass
 
 
 main()
