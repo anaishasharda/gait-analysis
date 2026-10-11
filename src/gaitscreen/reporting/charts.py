@@ -28,6 +28,8 @@ def _style(axes) -> None:
     axes.grid(True, **GRID)
     for spine in ("top", "right"):
         axes.spines[spine].set_visible(False)
+    # Never use matplotlib's offset notation (e.g. "+1.037e2"); plain numbers only.
+    axes.ticklabel_format(useOffset=False)
 
 
 def event_overlay_figure(series, analysis, *, max_seconds: float = 12.0):
