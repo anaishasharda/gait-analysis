@@ -16,6 +16,7 @@ import numpy as np
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.ticker import ScalarFormatter  # noqa: E402
 
 from ..pose.schema import SIDE_LANDMARKS  # noqa: E402
 from ..segmentation.events import _anterior  # noqa: E402
@@ -28,8 +29,16 @@ def _style(axes) -> None:
     axes.grid(True, **GRID)
     for spine in ("top", "right"):
         axes.spines[spine].set_visible(False)
-    # Never use matplotlib's offset notation (e.g. "+1.037e2"); plain numbers only.
-    axes.ticklabel_format(useOffset=False)
+    # Never use matplotlib's offset notation (e.g. "+1.037e2"); plain numbers
+    # only. Set it on the formatter directly, and only where the formatter
+    # supports it: ticklabel_format() raises AttributeError on any axis whose
+    # formatter is not the scalar one, and the trend chart's x-axis carries a
+    # fixed formatter (its tick labels are date strings). A cosmetic
+    # preference must never be able to take the Trends page down.
+    for axis in (axes.xaxis, axes.yaxis):
+        formatter = axis.get_major_formatter()
+        if isinstance(formatter, ScalarFormatter):
+            formatter.set_useOffset(False)
 
 
 def event_overlay_figure(series, analysis, *, max_seconds: float = 12.0):
