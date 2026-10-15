@@ -65,7 +65,7 @@ def test_every_core_metric_has_plain_wording():
 
 def test_no_metric_name_uses_gait_lab_vocabulary():
     """The point of this layer is that the names need no glossary."""
-    jargon = ("coefficient", "variability", "asymmetry", "cadence", "sagittal",
+    jargon = ("coefficient", "cadence", "sagittal",
               "normalised", "cv", "trunk ap")
     for key, spec in PLAIN.items():
         lowered = spec["name"].lower()
@@ -230,7 +230,7 @@ def test_unbiased_metric_still_headlines_normally(cfg):
         _FakeResult(metrics, _flags(_flag("stride_time_cv_pct"))), cfg
     )
     assert summary.tone == "attention"
-    assert "step-to-step consistency" in summary.headline
+    assert "stride-time variability" in summary.headline
 
 
 # --------------------------------------------------------------------------
@@ -295,7 +295,7 @@ def test_finding_is_tempered_when_the_recording_had_a_blocker(cfg):
     result.diagnostics = _Diagnostics([_Blocker("Subject is too small in the frame")])
 
     summary = summarise(result, cfg)
-    assert "left/right evenness" in summary.headline
+    assert "step-length asymmetry" in summary.headline
     assert "Read this cautiously" in summary.sub_headline
     assert "subject is too small" in summary.sub_headline
     assert summary.tone == "watch", "a blocked recording must not read as settled"

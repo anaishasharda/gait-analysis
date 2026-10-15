@@ -59,8 +59,8 @@ PERSISTENT_KEYS = ("person_name", "session_date", "trends_person")
 
 _THRESHOLD_LABELS = {
     "gait_speed_mps": "Speed",
-    "stride_time_cv_pct": "Step consistency",
-    "step_length_asymmetry_pct": "Left/right evenness",
+    "stride_time_cv_pct": "Stride-time variability",
+    "step_length_asymmetry_pct": "Step-length asymmetry",
 }
 
 

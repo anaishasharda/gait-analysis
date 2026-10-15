@@ -65,7 +65,7 @@ PLAIN: dict[str, dict] = {
                 "this is what makes up walking speed.",
     },
     "stride_time_cv_pct": {
-        "name": "Step-to-step consistency",
+        "name": "Stride-time variability",
         "unit": "% variation",
         "fmt": "{:.1f}",
         "higher_is_better": False,
@@ -74,7 +74,7 @@ PLAIN: dict[str, dict] = {
                 "most closely linked to falls in older adults.",
     },
     "step_length_asymmetry_pct": {
-        "name": "Left/right evenness",
+        "name": "Step-length asymmetry",
         "unit": "% difference",
         "fmt": "{:.1f}",
         "higher_is_better": False,
@@ -98,7 +98,7 @@ PLAIN: dict[str, dict] = {
         ),
     },
     "trunk_ap_sway_norm": {
-        "name": "Upper-body steadiness",
+        "name": "Upper-body sway",
         "unit": "",
         "fmt": "{:.3f}",
         "higher_is_better": False,
