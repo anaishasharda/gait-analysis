@@ -22,7 +22,7 @@ UPLOAD_DIR = PROJECT_ROOT / "data" / "uploads"
 
 #: Label, unit and number format for each core metric.
 METRIC_DISPLAY: dict[str, tuple[str, str, str]] = {
-    "gait_speed_mps": ("Gait speed", "m/s", "{:.2f}"),
+    "gait_speed_mps": ("Walking speed", "m/s", "{:.2f}"),
     "stride_time_cv_pct": ("Stride-time variability", "%", "{:.1f}"),
     "step_length_asymmetry_pct": ("Step-length asymmetry", "%", "{:.1f}"),
     "cadence_spm": ("Cadence", "steps/min", "{:.0f}"),

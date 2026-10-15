@@ -149,7 +149,7 @@ def _latest_walk(summary) -> None:
             tone, word = MOVEMENT_STYLE[trend.movement]
             sub = ui.pill(word, tone) + f"<div style='margin-top:.35rem'>{ui.esc(trend.change_text)}</div>"
         else:
-            tone, sub = "", ui.esc("First measurement")
+            tone, sub = "", ""
         if trend.metric == "gait_speed_mps":
             sub += f"<div>{ui.esc(spec['everyday'].format(kmh=trend.latest * 3.6))}</div>"
         items.append(ui.tile(trend.name, value, unit=unit, sub_html=sub,
