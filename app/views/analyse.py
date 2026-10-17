@@ -19,13 +19,15 @@ from app.shared import (PROJECT_ROOT, VIDEO_TYPES, bullet_list, current_setup,
                         disclaimer, open_repository, render_flags, render_metrics,
                         render_recording_feedback,
                         render_recording_measurements, safe_user_id, save_upload)
+from app.samples import (Sample, available_samples, cached_extraction,
+                         cached_overlay, get_sample, sample_setup)
 from app.widgets_plain import (render_annotated_video, render_plain_cards,
                                render_verdict)
 from gaitscreen.calibration.model import CalibrationError
 from gaitscreen.calibration.setup import MAX_COVERAGE_M, MIN_COVERAGE_M, save_setup
 from gaitscreen.config import Config
 from gaitscreen.io import video as video_io
-from gaitscreen.pipeline import analyse_video, persist_session
+from gaitscreen.pipeline import analyse_extraction, analyse_video, persist_session
 from gaitscreen.reporting import charts
 from gaitscreen.reporting.overlay import ffmpeg_available, render_overlay_video
 from gaitscreen.reporting.plain import _plain_unmeasured as plain_unmeasured
@@ -91,7 +93,8 @@ these applied to your clip and what to change.
 def render(cfg: Config) -> None:
     ui.hero(
         "Analyse a walk",
-        "Upload a side-on video of someone walking across the frame. The tool "
+        "Upload a side-on video of someone walking across the frame, or try a "
+        "built-in sample. The tool "
         "tracks their steps and reports walking speed, rhythm and evenness, with "
         "the tracking drawn over the video so you can check it.",
     )
@@ -104,18 +107,17 @@ def render(cfg: Config) -> None:
     setup = current_setup(cfg)
 
     _camera_step(cfg, setup, locked)
-    settings, uploaded = _walk_step(setup, locked)
+    sample_mode = _source_picker(locked) == SOURCE_SAMPLE
+    settings, uploaded, sample = _walk_step(setup, locked, sample_mode)
 
-    # If the uploaded file differs from the one that was analysed, the
+    # If the chosen video differs from the one that was analysed, the
     # displayed results are stale. Clear them immediately.
-    # Key = name + size (file_id is not reliable across uploads).
-    def _file_key(f):
-        return f"{f.name}_{f.size}" if f is not None else None
-
-    uploaded_key = _file_key(uploaded)
+    # Key = name + size for an upload (file_id is not reliable across
+    # uploads); the sample's key for a sample.
+    source_key = _source_key(sample if sample is not None else uploaded)
     analyzed_key = st.session_state.get("_analyzed_file_key")
-    if uploaded_key is not None and st.session_state.get("result") is not None:
-        if analyzed_key is not None and uploaded_key != analyzed_key:
+    if source_key is not None and st.session_state.get("result") is not None:
+        if analyzed_key is not None and source_key != analyzed_key:
             st.session_state["result"] = None
             st.session_state["overlay"] = None
 
@@ -135,7 +137,9 @@ def render(cfg: Config) -> None:
     # Phase 3: start the blocking analysis. Frontend already shows cleared UI.
     if st.session_state.get("analysis_phase") == 3:
         st.session_state["analysis_phase"] = None
-        if uploaded is not None:
+        if sample is not None:
+            _run_sample(cfg, sample, settings)
+        elif uploaded is not None:
             _run(cfg, uploaded, settings, setup)
         st.rerun()
         return
@@ -166,11 +170,11 @@ def render(cfg: Config) -> None:
             st.rerun()
         return
 
-    if uploaded is None:
+    if uploaded is None and sample is None:
         return
 
     if st.button("Analyse this walk", type="primary", icon=":material/play_arrow:",
-                 disabled=setup is None):
+                 disabled=(setup is None and sample is None)):
         # Clear old results immediately so the pane doesn't show stale metrics
         # while the new analysis runs.
         st.session_state["result"] = None
@@ -231,11 +235,60 @@ def _camera_step(cfg: Config, setup, locked: bool) -> None:
                           icon=":material/help:", disabled=locked)
 
 
-def _walk_step(setup, locked: bool) -> tuple[dict, object]:
+SOURCE_UPLOAD = "Your own video"
+SOURCE_SAMPLE = "Try a sample"
+
+
+def _source_picker(locked: bool) -> str:
+    """Upload a video, or try a built-in sample without recording first."""
+    if not available_samples():
+        return SOURCE_UPLOAD
+    st.session_state.setdefault("video_source", SOURCE_UPLOAD)
+    choice = st.segmented_control(
+        "Video", [SOURCE_UPLOAD, SOURCE_SAMPLE], key="video_source",
+        label_visibility="collapsed", disabled=locked,
+    )
+    return choice or SOURCE_UPLOAD
+
+
+def _sample_picker(locked: bool) -> Sample:
+    samples = available_samples()
+    st.session_state.setdefault("sample_key", samples[0].key)
+    left, right = st.columns([1, 1.15], gap="medium")
+    with left:
+        key = st.radio(
+            "Sample walk", [x.key for x in samples], key="sample_key",
+            format_func=lambda k: get_sample(k).title,
+            captions=[x.description for x in samples], disabled=locked,
+        )
+    sample = get_sample(key)
+    with right:
+        # A still, not the video: the clips are 20-30 MB, and streaming one just
+        # to help choose between them makes the page slow to settle.
+        if sample.poster.exists():
+            st.image(str(sample.poster), width="stretch")
+    return sample
+
+
+def _source_key(source) -> str | None:
+    """Identifies the chosen video, so a change can clear stale results.
+
+    Name and size for an upload (Streamlit's file id is not stable across
+    re-uploads of the same file); the sample's key for a sample.
+    """
+    if source is None:
+        return None
+    if isinstance(source, Sample):
+        return f"sample:{source.key}"
+    return f"{source.name}_{source.size}"
+
+
+def _walk_step(setup, locked: bool, sample_mode: bool) -> tuple[dict, object, object]:
     """Step 2: who is walking, when, and the video itself."""
     ready = setup is not None
     with st.container(border=True):
-        ui.step(2, "Choose the walk", state="current" if ready else "todo",
+        ui.step(2, "Choose the walk",
+                state="current" if (ready or sample_mode) else "todo",
                 hint="Name the person so the walk can be added to their trend.")
         details = st.columns(2)
         with details[0]:
@@ -252,17 +305,22 @@ def _walk_step(setup, locked: bool) -> tuple[dict, object]:
             when = st.date_input("Date of recording", key="session_date",
                                  disabled=locked)
 
-        uploaded = st.file_uploader(
-            "Upload a side-on video (person walking across the frame)",
-            type=VIDEO_TYPES, disabled=locked or not ready,
-        )
-        if locked:
-            st.caption("Upload is disabled during analysis and will be re-enabled "
-                       "when it finishes.")
-        elif uploaded is None:
-            st.info("Upload a video to begin." if ready else
-                    "Upload a video to begin once the camera setup above is saved.",
-                    icon=":material/upload:")
+        sample = None
+        uploaded = None
+        if sample_mode:
+            sample = _sample_picker(locked)
+        else:
+            uploaded = st.file_uploader(
+                "Upload a side-on video (person walking across the frame)",
+                type=VIDEO_TYPES, disabled=locked or not ready,
+            )
+            if locked:
+                st.caption("Upload is disabled during analysis and will be re-enabled "
+                           "when it finishes.")
+            elif uploaded is None:
+                st.info("Upload a video to begin." if ready else
+                        "Upload a video to begin once the camera setup above is saved.",
+                        icon=":material/upload:")
 
         with st.expander("Processing options", icon=":material/tune:"):
             camera_check = st.checkbox(
@@ -291,8 +349,9 @@ def _walk_step(setup, locked: bool) -> tuple[dict, object]:
         "notes": "",
         "camera_check": camera_check,
         "make_video": make_video,
+        "sample_mode": sample_mode,
     }
-    return settings, uploaded
+    return settings, uploaded, sample
 
 
 def _run(cfg: Config, uploaded, settings: dict, setup) -> None:
@@ -366,6 +425,81 @@ def _run_inner(cfg: Config, uploaded, settings: dict, setup) -> None:
         st.session_state["overlay"] = None
 
 
+def _run_sample(cfg: Config, sample: Sample, settings: dict) -> None:
+    st.session_state["analysing"] = True
+    st.session_state["progress_pct"] = 0.0
+    st.session_state["progress_text"] = "Starting…"
+    try:
+        _run_sample_inner(cfg, sample, settings)
+    finally:
+        st.session_state["analysing"] = False
+        st.session_state.pop("progress_pct", None)
+        st.session_state.pop("progress_text", None)
+
+
+def _run_sample_inner(cfg: Config, sample: Sample, settings: dict) -> None:
+    """Analyse a built-in sample: tracking cached, flags worked out fresh.
+
+    The sample brings its own camera setup, so the viewer's saved setup is
+    never used to measure it. Person and date still come from the form:
+    the flags are judged against that person's earlier walks, if any.
+    """
+    session_date = settings["session_date"].isoformat()
+    progress = st.progress(0.0, text="Tracking the person in the video…")
+    repository = open_repository(cfg)
+
+    try:
+        setup = sample_setup(cfg)
+        info = video_io.probe(sample.path, cfg)
+        calibration = setup.calibration_for(info.width, info.height)
+        history = None
+        if settings["user_id"]:
+            history = repository.sessions_for_user(
+                safe_user_id(settings["user_id"]), before_date=session_date
+            )
+
+        def on_frame(index: int) -> None:
+            pct = min(0.9, index / max(1, info.n_frames))
+            txt = f"Tracking the person in the video… frame {index}"
+            st.session_state["progress_pct"] = pct
+            st.session_state["progress_text"] = txt
+            progress.progress(pct, text=txt)
+
+        extraction = cached_extraction(
+            sample.key, settings["camera_check"], ALGO_VERSION, cfg, calibration,
+            on_frame,
+        )
+        result = analyse_extraction(
+            extraction, cfg,
+            user_id=settings["user_id"],
+            session_date=session_date,
+            declared_device=None if settings["device"] == "none" else settings["device"],
+            history=history,
+        )
+        st.session_state["result"] = result
+        st.session_state["result_saved"] = False
+        st.session_state["_analyzed_file_key"] = _source_key(sample)
+        overlay = None
+        if settings["make_video"]:
+            try:
+                overlay = cached_overlay(
+                    sample.key, settings["camera_check"], ALGO_VERSION, cfg, result)
+            except Exception as exc:  # noqa: BLE001
+                st.warning(f"Could not create the annotated video: {exc}")
+        st.session_state["overlay"] = overlay
+        progress.progress(1.0, text="Done")
+    except Exception as exc:  # noqa: BLE001 - surface the error, don't kill the app
+        progress.empty()
+        detail = traceback.format_exc()
+        print("SAMPLE ANALYSIS FAILED\n" + detail, flush=True)
+        st.session_state["last_error"] = detail
+        st.error(f"Analysis failed: {exc}")
+        with st.expander("Technical detail"):
+            st.code(detail)
+        st.session_state["result"] = None
+        st.session_state["overlay"] = None
+
+
 def _render_overlay(cfg: Config, result, progress) -> dict | None:
     """Render the annotated playback, without letting a failure lose the analysis.
 
@@ -414,9 +548,19 @@ def _render_result(cfg: Config, result, settings: dict) -> None:
     summary = summarise(
         result, cfg, include_technical=st.session_state.get("show_technical", False))
 
-    ui.section("Results", getattr(result.extraction.info.path, "name", ""))
+    ui.section("Results",
+               "Built-in sample walk" if settings.get("sample_mode")
+               else getattr(result.extraction.info.path, "name", ""))
     _headline_tiles(result)
-    _save_panel(cfg, result, settings)
+    if settings.get("sample_mode"):
+        # A sample is the same recorded walk for everyone. Saving it would put
+        # a metronome-paced practice walk into a person's trend history, where
+        # it would be read as that person's own walking.
+        st.info("This is a built-in sample walk, shown so the tool can be tried "
+                "without recording. Sample walks are not saved to a trend.",
+                icon=":material/science:")
+    else:
+        _save_panel(cfg, result, settings)
 
     if _is_coronal(result):
         # Said before the numbers, not after. Someone who filmed from the wrong

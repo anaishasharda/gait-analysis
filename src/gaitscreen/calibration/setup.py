@@ -31,6 +31,9 @@ from .model import Calibration, CalibrationError
 #: every person list by :func:`is_reserved`.
 CAMERA_SETUP_ID = "__camera_setup__"
 
+#: Database id the built-in sample videos' setups are stored under.
+SAMPLE_SETUP_ID = "__sample_setup__"
+
 #: Plausible coverage, in metres. Below the lower bound the person would cross
 #: the frame in under a stride; above the upper one they would be a few pixels
 #: tall. Either is almost certainly a typing error (centimetres, or feet).
@@ -115,7 +118,29 @@ def setup_from_calibration(calibration: Calibration) -> CameraSetup:
 
 def is_reserved(user_id: str) -> bool:
     """True for database ids that are not people."""
-    return user_id == CAMERA_SETUP_ID
+    return user_id == CAMERA_SETUP_ID or user_id == SAMPLE_SETUP_ID
+
+
+def ensure_fixed_setup(repository, calibration_id: str, coverage_m: float,
+                       *, notes: Optional[str] = None) -> CameraSetup:
+    """A setup with a fixed id, stored once: for videos that bring their own.
+
+    A sample video was filmed somewhere specific, so it must be measured with
+    that place's coverage rather than whatever setup the viewer has saved. It
+    still needs a row in the database, because a saved session records the id
+    of the calibration that measured it and the database enforces that link.
+    Stored without becoming the active camera setup.
+    """
+    validate_coverage(coverage_m)
+    if repository.get_calibration(calibration_id) is None:
+        calibration = Calibration.from_two_points(
+            SAMPLE_SETUP_ID, (0.0, 0.0), (float(_REFERENCE_WIDTH), 0.0),
+            float(coverage_m), _REFERENCE_WIDTH, _REFERENCE_WIDTH,
+            calibration_id=calibration_id, notes=notes,
+        )
+        repository.save_calibration(calibration, make_active=False)
+    return CameraSetup(coverage_m=float(coverage_m), calibration_id=calibration_id,
+                       created_at="", notes=notes)
 
 
 def _from_calibration(calibration: Calibration) -> CameraSetup:
